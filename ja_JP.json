@@ -1,0 +1,20 @@
+{
+  "Name": "ハードウェアモニター",
+  "Description": "リアルタイムハードウェア監視 - CPU/GPU/メモリ/ファン/ネットワーク",
+  "Actions": [
+    { "Name": "CPU温度", "Tooltip": "CPU温度を表示" },
+    { "Name": "GPU温度", "Tooltip": "GPU温度を表示" },
+    { "Name": "CPU使用率", "Tooltip": "CPU使用率を表示" },
+    { "Name": "GPU使用率", "Tooltip": "GPU使用率を表示" },
+    { "Name": "メモリ使用率", "Tooltip": "メモリ使用率を表示" },
+    { "Name": "CPU電力", "Tooltip": "CPU消費電力（ワット）を表示" },
+    { "Name": "GPU電力", "Tooltip": "GPU消費電力（ワット）を表示" },
+    { "Name": "CPUクロック", "Tooltip": "CPUクロック速度を表示" },
+    { "Name": "GPUクロック", "Tooltip": "GPUコアクロックを表示" },
+    { "Name": "GPU VRAM", "Tooltip": "GPU VRAM使用量を表示" },
+    { "Name": "メモリ使用量", "Tooltip": "使用メモリ（GB）を表示" },
+    { "Name": "ファン回転数", "Tooltip": "ファン回転数（RPM）を表示" },
+    { "Name": "ネットワーク送信", "Tooltip": "ネットワーク送信速度を表示" },
+    { "Name": "ネットワーク受信", "Tooltip": "ネットワーク受信速度を表示" }
+  ]
+}

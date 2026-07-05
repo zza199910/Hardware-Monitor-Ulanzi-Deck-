@@ -1,0 +1,159 @@
+{
+  "Version": "2.0.0",
+  "Author": "Ulanzi Plugin Developer",
+  "Name": "Hardware Monitor",
+  "Description": "Real-time hardware monitor - CPU/GPU/RAM/Fan/Network",
+  "Icon": "assets/icons/icon.png",
+  "Category": "Hardware Monitor",
+  "CategoryIcon": "assets/icons/categoryIcon.png",
+  "CodePath": "plugin/app.html",
+  "Type": "JavaScript",
+  "Inspect": "--inspect=127.0.0.1:9201",
+  "PrivateAPI": true,
+  "SupportedInMultiActions": false,
+  "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor",
+  "Actions": [
+    {
+      "Name": "CPU Temperature",
+      "Icon": "assets/icons/cpu.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/cpu.png" }],
+      "Tooltip": "Display CPU temperature",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.cpu-temp",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "GPU Temperature",
+      "Icon": "assets/icons/gpu.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/gpu.png" }],
+      "Tooltip": "Display GPU temperature",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.gpu-temp",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "CPU Usage",
+      "Icon": "assets/icons/cpu.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/cpu.png" }],
+      "Tooltip": "Display CPU usage percent",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.cpu-percent",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "GPU Usage",
+      "Icon": "assets/icons/gpu.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/gpu.png" }],
+      "Tooltip": "Display GPU usage percent",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.gpu-percent",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "RAM Usage",
+      "Icon": "assets/icons/memory.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/memory.png" }],
+      "Tooltip": "Display RAM usage percent",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.ram-percent",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "CPU Power",
+      "Icon": "assets/icons/cpu.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/cpu.png" }],
+      "Tooltip": "Display CPU power draw in Watts",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.cpu-power",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "GPU Power",
+      "Icon": "assets/icons/gpu.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/gpu.png" }],
+      "Tooltip": "Display GPU power draw in Watts",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.gpu-power",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "CPU Clock",
+      "Icon": "assets/icons/cpu.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/cpu.png" }],
+      "Tooltip": "Display CPU clock speed",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.cpu-clock",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "GPU Clock",
+      "Icon": "assets/icons/gpu.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/gpu.png" }],
+      "Tooltip": "Display GPU core clock speed",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.gpu-clock",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "GPU VRAM",
+      "Icon": "assets/icons/gpu.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/gpu.png" }],
+      "Tooltip": "Display GPU VRAM usage",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.gpu-mem",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "RAM Used",
+      "Icon": "assets/icons/memory.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/memory.png" }],
+      "Tooltip": "Display RAM used in GB",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.ram-gb",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "Fan Speed",
+      "Icon": "assets/icons/fan.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/fan.png" }],
+      "Tooltip": "Display fan speed in RPM",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.fan",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "Network Upload",
+      "Icon": "assets/icons/network.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/network.png" }],
+      "Tooltip": "Display network upload speed",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.network-up",
+      "SupportedInMultiActions": false
+    },
+    {
+      "Name": "Network Download",
+      "Icon": "assets/icons/network.png",
+      "PropertyInspectorPath": "property-inspector/hardwaremonitor/systemvitals.html",
+      "state": 0,
+      "States": [{ "Name": "Default", "Image": "assets/icons/network.png" }],
+      "Tooltip": "Display network download speed",
+      "UUID": "com.ulanzi.ulanzistudio.HardwareMonitor.network-down",
+      "SupportedInMultiActions": false
+    }
+  ],
+  "OS": [{ "Platform": "windows", "MinimumVersion": "10" }],
+  "Software": { "MinVersion": "2.1.4" }
+}

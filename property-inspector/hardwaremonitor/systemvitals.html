@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hardware Monitor Settings</title>
+  <link rel="stylesheet" href="../../libs/css/uspi.css">
+  <style>
+    @font-face {
+      font-family: 'vivremotion';
+      font-style: normal;
+      font-weight: 400;
+      src: url('../../libs/fonts/vivremotion.ttf');
+    }
+    @font-face {
+      font-family: 'RajdhaniMedium';
+      font-style: normal;
+      font-weight: 500;
+      src: url('../../libs/fonts/Rajdhani-Medium.ttf');
+    }
+  </style>
+</head>
+<body>
+  <div class="uspi-wrapper hidden">
+    <form id="property-inspector">
+
+      <!-- Preset Style -->
+      <div class="uspi-item">
+        <div class="uspi-item-label">Preset Style</div>
+        <div class="uspi-item-value">
+          <select id="presetSelect" class="uspi-item-value">
+            <option value="gaming">🎮 Gaming</option>
+            <option value="minimal">📊 Minimal</option>
+            <option value="retro">🕹️ Retro</option>
+            <option value="cyberpunk">🌆 Cyberpunk</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Chart Type -->
+      <div class="uspi-item">
+        <div class="uspi-item-label">Chart Type</div>
+        <div class="uspi-item-value">
+          <select id="chartStyle" class="uspi-item-value">
+            <option value="ring">💍 Ring</option>
+            <option value="wave">🌊 Wave Chart</option>
+          </select>
+        </div>
+      </div>
+
+    </form>
+  </div>
+
+  <script src="../../libs/js/constants.js"></script>
+  <script src="../../libs/js/eventEmitter.js"></script>
+  <script src="../../libs/js/timers.js"></script>
+  <script src="../../libs/js/utils.js"></script>
+  <script src="../../libs/js/ulanziApi.js"></script>
+
+  <script src="./systemvitals.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "Name": "Monitor de Hardware",
+  "Description": "Monitorização de hardware em tempo real - CPU/GPU/RAM/Ventoinha/Rede",
+  "Actions": [
+    { "Name": "Temperatura CPU", "Tooltip": "Mostrar temperatura da CPU" },
+    { "Name": "Temperatura GPU", "Tooltip": "Mostrar temperatura da GPU" },
+    { "Name": "Uso da CPU", "Tooltip": "Mostrar percentagem de uso da CPU" },
+    { "Name": "Uso da GPU", "Tooltip": "Mostrar percentagem de uso da GPU" },
+    { "Name": "Uso da RAM", "Tooltip": "Mostrar percentagem de uso da RAM" },
+    { "Name": "Potência CPU", "Tooltip": "Mostrar consumo da CPU em Watts" },
+    { "Name": "Potência GPU", "Tooltip": "Mostrar consumo da GPU em Watts" },
+    { "Name": "Clock CPU", "Tooltip": "Mostrar frequência do clock da CPU" },
+    { "Name": "Clock GPU", "Tooltip": "Mostrar frequência do clock da GPU" },
+    { "Name": "VRAM GPU", "Tooltip": "Mostrar uso da VRAM da GPU" },
+    { "Name": "RAM usada", "Tooltip": "Mostrar RAM usada em GB" },
+    { "Name": "Velocidade Ventoinha", "Tooltip": "Mostrar velocidade da ventoinha em RPM" },
+    { "Name": "Upload de Rede", "Tooltip": "Mostrar velocidade de upload da rede" },
+    { "Name": "Download de Rede", "Tooltip": "Mostrar velocidade de download da rede" }
+  ]
+}

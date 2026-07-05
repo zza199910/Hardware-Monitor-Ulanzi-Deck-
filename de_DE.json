@@ -1,0 +1,20 @@
+{
+  "Name": "Hardware-Monitor",
+  "Description": "Echtzeit-Hardware-Überwachung - CPU/GPU/RAM/Lüfter/Netzwerk",
+  "Actions": [
+    { "Name": "CPU-Temperatur", "Tooltip": "CPU-Temperatur anzeigen" },
+    { "Name": "GPU-Temperatur", "Tooltip": "GPU-Temperatur anzeigen" },
+    { "Name": "CPU-Auslastung", "Tooltip": "CPU-Auslastung anzeigen" },
+    { "Name": "GPU-Auslastung", "Tooltip": "GPU-Auslastung anzeigen" },
+    { "Name": "RAM-Auslastung", "Tooltip": "RAM-Auslastung anzeigen" },
+    { "Name": "CPU-Leistung", "Tooltip": "CPU-Leistungsaufnahme in Watt" },
+    { "Name": "GPU-Leistung", "Tooltip": "GPU-Leistungsaufnahme in Watt" },
+    { "Name": "CPU-Takt", "Tooltip": "CPU-Taktfrequenz anzeigen" },
+    { "Name": "GPU-Takt", "Tooltip": "GPU-Kerntakt anzeigen" },
+    { "Name": "GPU-VRAM", "Tooltip": "GPU-VRAM-Auslastung anzeigen" },
+    { "Name": "RAM belegt", "Tooltip": "Belegten RAM in GB anzeigen" },
+    { "Name": "Lüfterdrehzahl", "Tooltip": "Lüfterdrehzahl in RPM anzeigen" },
+    { "Name": "Netzwerk Upload", "Tooltip": "Netzwerk-Upload-Geschwindigkeit" },
+    { "Name": "Netzwerk Download", "Tooltip": "Netzwerk-Download-Geschwindigkeit" }
+  ]
+}

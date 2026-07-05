@@ -1,0 +1,20 @@
+{
+  "Name": "Hardware Monitor",
+  "Description": "Real-time hardware monitoring - CPU/GPU/RAM/Fan/Network",
+  "Actions": [
+    { "Name": "CPU Temperature", "Tooltip": "Display CPU temperature" },
+    { "Name": "GPU Temperature", "Tooltip": "Display GPU temperature" },
+    { "Name": "CPU Usage", "Tooltip": "Display CPU usage percent" },
+    { "Name": "GPU Usage", "Tooltip": "Display GPU usage percent" },
+    { "Name": "RAM Usage", "Tooltip": "Display RAM usage percent" },
+    { "Name": "CPU Power", "Tooltip": "Display CPU power draw in Watts" },
+    { "Name": "GPU Power", "Tooltip": "Display GPU power draw in Watts" },
+    { "Name": "CPU Clock", "Tooltip": "Display CPU clock speed" },
+    { "Name": "GPU Clock", "Tooltip": "Display GPU core clock speed" },
+    { "Name": "GPU VRAM", "Tooltip": "Display GPU VRAM usage" },
+    { "Name": "RAM Used", "Tooltip": "Display RAM used in GB" },
+    { "Name": "Fan Speed", "Tooltip": "Display fan speed in RPM" },
+    { "Name": "Network Upload", "Tooltip": "Display network upload speed" },
+    { "Name": "Network Download", "Tooltip": "Display network download speed" }
+  ]
+}

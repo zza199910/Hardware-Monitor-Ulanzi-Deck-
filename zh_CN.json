@@ -1,0 +1,20 @@
+{
+  "Name": "硬件监视器",
+  "Description": "实时硬件监控 - CPU/GPU/内存/风扇/网络",
+  "Actions": [
+    { "Name": "CPU 温度", "Tooltip": "显示 CPU 温度" },
+    { "Name": "GPU 温度", "Tooltip": "显示 GPU 温度" },
+    { "Name": "CPU 使用率", "Tooltip": "显示 CPU 使用率" },
+    { "Name": "GPU 使用率", "Tooltip": "显示 GPU 使用率" },
+    { "Name": "内存使用率", "Tooltip": "显示内存使用率" },
+    { "Name": "CPU 功耗", "Tooltip": "显示 CPU 功耗（瓦特）" },
+    { "Name": "GPU 功耗", "Tooltip": "显示 GPU 功耗（瓦特）" },
+    { "Name": "CPU 频率", "Tooltip": "显示 CPU 频率" },
+    { "Name": "GPU 频率", "Tooltip": "显示 GPU 核心频率" },
+    { "Name": "GPU 显存", "Tooltip": "显示 GPU 显存用量" },
+    { "Name": "内存已用", "Tooltip": "显示已用内存（GB）" },
+    { "Name": "风扇转速", "Tooltip": "显示风扇转速（RPM）" },
+    { "Name": "网络上传", "Tooltip": "显示网络上传速度" },
+    { "Name": "网络下载", "Tooltip": "显示网络下载速度" }
+  ]
+}

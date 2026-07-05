@@ -1,0 +1,20 @@
+{
+  "Name": "하드웨어 모니터",
+  "Description": "실시간 하드웨어 모니터링 - CPU/GPU/메모리/팬/네트워크",
+  "Actions": [
+    { "Name": "CPU 온도", "Tooltip": "CPU 온도 표시" },
+    { "Name": "GPU 온도", "Tooltip": "GPU 온도 표시" },
+    { "Name": "CPU 사용률", "Tooltip": "CPU 사용률 표시" },
+    { "Name": "GPU 사용률", "Tooltip": "GPU 사용률 표시" },
+    { "Name": "메모리 사용률", "Tooltip": "메모리 사용률 표시" },
+    { "Name": "CPU 전력", "Tooltip": "CPU 전력 소비량(와트) 표시" },
+    { "Name": "GPU 전력", "Tooltip": "GPU 전력 소비량(와트) 표시" },
+    { "Name": "CPU 클럭", "Tooltip": "CPU 클럭 속도 표시" },
+    { "Name": "GPU 클럭", "Tooltip": "GPU 코어 클럭 표시" },
+    { "Name": "GPU VRAM", "Tooltip": "GPU VRAM 사용량 표시" },
+    { "Name": "메모리 사용량", "Tooltip": "사용 중인 메모리(GB) 표시" },
+    { "Name": "팬 속도", "Tooltip": "팬 속도(RPM) 표시" },
+    { "Name": "네트워크 업로드", "Tooltip": "네트워크 업로드 속도 표시" },
+    { "Name": "네트워크 다운로드", "Tooltip": "네트워크 다운로드 속도 표시" }
+  ]
+}
