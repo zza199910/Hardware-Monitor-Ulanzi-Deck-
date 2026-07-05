@@ -1,0 +1,37 @@
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Dependencies
+node_modules/
+
+# Build & Package output
+*.zip
+*.tar.gz
+*.tar
+*.7z
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+coverage/
+
+# Temp files
+*.tmp
+*.temp
+/tmp/
