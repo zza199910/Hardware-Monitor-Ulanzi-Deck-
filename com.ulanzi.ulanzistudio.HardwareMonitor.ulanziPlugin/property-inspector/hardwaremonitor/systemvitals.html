@@ -26,24 +26,34 @@
 
       <!-- Preset Style -->
       <div class="uspi-item">
-        <div class="uspi-item-label">Preset Style</div>
+        <div class="uspi-item-label" data-localize="presetStyle">Preset Style</div>
         <div class="uspi-item-value">
           <select id="presetSelect" class="uspi-item-value">
-            <option value="gaming">🎮 Gaming</option>
-            <option value="minimal">📊 Minimal</option>
-            <option value="retro">🕹️ Retro</option>
-            <option value="cyberpunk">🌆 Cyberpunk</option>
+            <option value="gaming" data-localize="preset_gaming">🎮 Gaming</option>
+            <option value="minimal" data-localize="preset_minimal">📊 Minimal</option>
+            <option value="retro" data-localize="preset_retro">🕹️ Retro</option>
+            <option value="cyberpunk" data-localize="preset_cyberpunk">🌆 Cyberpunk</option>
           </select>
         </div>
       </div>
 
       <!-- Chart Type -->
       <div class="uspi-item">
-        <div class="uspi-item-label">Chart Type</div>
+        <div class="uspi-item-label" data-localize="chartType">Chart Type</div>
         <div class="uspi-item-value">
           <select id="chartStyle" class="uspi-item-value">
-            <option value="ring">💍 Ring</option>
-            <option value="wave">🌊 Wave Chart</option>
+            <option value="ring" data-localize="chart_ring">💍 Ring</option>
+            <option value="wave" data-localize="chart_wave">🌊 Wave Chart</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- GPU Selection (Auto + manual override for multi-GPU) -->
+      <div class="uspi-item">
+        <div class="uspi-item-label">GPU</div>
+        <div class="uspi-item-value">
+          <select id="gpuSelect" class="uspi-item-value">
+            <option value="">Auto（自动）</option>
           </select>
         </div>
       </div>

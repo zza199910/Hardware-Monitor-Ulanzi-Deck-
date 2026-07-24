@@ -16,5 +16,15 @@
     { "Name": "ファン回転数", "Tooltip": "ファン回転数（RPM）を表示" },
     { "Name": "ネットワーク送信", "Tooltip": "ネットワーク送信速度を表示" },
     { "Name": "ネットワーク受信", "Tooltip": "ネットワーク受信速度を表示" }
-  ]
+  ],
+  "Localization": {
+    "presetStyle": "プリセットスタイル",
+    "chartType": "チャートタイプ",
+    "preset_gaming": "🎮 ゲーミング",
+    "preset_minimal": "📊 ミニマル",
+    "preset_retro": "🕹️ レトロ",
+    "preset_cyberpunk": "🌆 サイバーパンク",
+    "chart_ring": "💍 リング",
+    "chart_wave": "🌊 ウェーブチャート"
+  }
 }

@@ -16,5 +16,15 @@
     { "Name": "Fan Speed", "Tooltip": "Display fan speed in RPM" },
     { "Name": "Network Upload", "Tooltip": "Display network upload speed" },
     { "Name": "Network Download", "Tooltip": "Display network download speed" }
-  ]
+  ],
+  "Localization": {
+    "presetStyle": "Preset Style",
+    "chartType": "Chart Type",
+    "preset_gaming": "🎮 Gaming",
+    "preset_minimal": "📊 Minimal",
+    "preset_retro": "🕹️ Retro",
+    "preset_cyberpunk": "🌆 Cyberpunk",
+    "chart_ring": "💍 Ring",
+    "chart_wave": "🌊 Wave Chart"
+  }
 }

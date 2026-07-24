@@ -7,6 +7,8 @@
 const ACTION_CACHE = {};           // context → Action 实例
 const _pendingSettings = {};        // context → 提前到达的 onParamFromApp 配置缓存
 const LHM_URL = 'http://127.0.0.1:8085/data.json';
+const DEBUG = false; // 热路径诊断日志开关：默认关闭，避免每 tick 的 JSON.stringify 开销
+let _selectedGpuId = ''; // 用户在设置页手动选择的 GPU HardwareId（空字符串 = Auto 自动）
 
 // ═══════════════════════════════════════════════════════
 //  LibreHardwareMonitor JSON 解析（纯 JavaScript，零依赖）
@@ -14,9 +16,53 @@ const LHM_URL = 'http://127.0.0.1:8085/data.json';
 // ═══════════════════════════════════════════════════════
 
 function parseValue(val) {
-  if (!val || typeof val !== 'string') return 0;
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'number') return val;          // RawValue 为数字（如网速 B/s）时直接返回
+  if (typeof val !== 'string') return 0;
   const m = val.match(/^([\d.]+)/);
   return m ? parseFloat(m[1]) : 0;
+}
+
+// 兼容数字 RawValue：RawValue 为数字时直接返回，否则回退字符串解析
+function parseRaw(val) {
+  return (typeof val === 'number') ? val : parseValue(val);
+}
+
+// 网速字节单位自动缩放（与 LHM 一致的 KB/s|MB/s|GB/s，并补 LHM 缺失的 GB/s 档）
+// 输入 B/s（数字），输出 {value, unit}
+function formatThroughput(bytesPerSec) {
+  const b = (typeof bytesPerSec === 'number' && isFinite(bytesPerSec)) ? bytesPerSec : 0;
+  const KB = 1024, MB = 1024 * 1024, GB = 1024 * 1024 * 1024;
+  if (b >= GB)  return { value: +(b / GB).toFixed(2), unit: 'GB/s' };
+  if (b >= MB)  return { value: +(b / MB).toFixed(2), unit: 'MB/s' };
+  if (b >= KB)  return { value: +(b / KB).toFixed(2), unit: 'KB/s' };
+  return { value: +b.toFixed(2), unit: 'B/s' };
+}
+
+// 将字节/秒按目标显示单位换算（与 formatThroughput 档位一致：KB/MB/GB ×1024）
+// 用于把 NIC Connection Speed（字节 B/s）对齐到当前吞吐量显示单位，使 ring/wave 的 max 与 value 同单位
+function convertBytesToUnit(bytesPerSec, unit) {
+  const b = (typeof bytesPerSec === 'number' && isFinite(bytesPerSec)) ? bytesPerSec : 0;
+  const KB = 1024, MB = 1024 * 1024, GB = 1024 * 1024 * 1024;
+  switch (unit) {
+    case 'GB/s': return +(b / GB).toFixed(2);
+    case 'MB/s': return +(b / MB).toFixed(2);
+    case 'KB/s': return +(b / KB).toFixed(2);
+    default: return +b.toFixed(2); // B/s
+  }
+}
+
+// 将显示单位数值反算回字节/秒（convertBytesToUnit 的逆运算，1024 基）。
+// 用于图形渲染：把缩放后的显示值统一换算回 B/s 基准，避免单位变化导致 ring/wave 顶满/跳变。
+function unitToBytes(num, unit) {
+  const n = (typeof num === 'number' && isFinite(num)) ? num : 0;
+  const KB = 1024, MB = 1024 * 1024, GB = 1024 * 1024 * 1024;
+  switch (unit) {
+    case 'GB/s': return n * GB;
+    case 'MB/s': return n * MB;
+    case 'KB/s': return n * KB;
+    default: return n; // B/s
+  }
 }
 
 function findHardwareNode(root, hwIdPattern) {
@@ -26,6 +72,17 @@ function findHardwareNode(root, hwIdPattern) {
       return child;
     }
     const found = findHardwareNode(child, hwIdPattern);
+    if (found) return found;
+  }
+  return null;
+}
+
+// 精确匹配 HardwareId（用于多 GPU 场景手动选择指定显卡）
+function findHardwareNodeById(root, hwId) {
+  if (!root || !root.Children || !hwId) return null;
+  for (const child of root.Children) {
+    if (child.HardwareId === hwId) return child;
+    const found = findHardwareNodeById(child, hwId);
     if (found) return found;
   }
   return null;
@@ -94,7 +151,7 @@ function findBySensorId(sensors, ...suffixes) {
   return 0;
 }
 
-function parseLHMJson(root) {
+function parseLHMJson(root, selectedGpuId) {
   const result = {
     cpu:    { load: 0, temp: 0, clock: 0, power: 0 },
     gpu:    { load: 0, temp: 0, memUsed: 0, memTotal: 0, power: 0, clock: 0 },
@@ -135,10 +192,14 @@ function parseLHMJson(root) {
   }
 
   // ── GPU ───────────────────────────────────────────────
-  let gpuNode = findHardwareNode(root, '/gpu-amd/') ||
-                findHardwareNode(root, '/gpu-nvidia/') ||
-                findHardwareNode(root, '/nvgpu/') ||
-                findHardwareNode(root, '/amdgpu/');
+  let gpuNode = selectedGpuId
+    ? findHardwareNodeById(root, selectedGpuId)
+    : (findHardwareNode(root, '/gpu-amd/') ||
+       findHardwareNode(root, '/gpu-nvidia/') ||
+       findHardwareNode(root, '/nvgpu/') ||
+       findHardwareNode(root, '/amdgpu/') ||
+       findHardwareNode(root, '/gpu-intel-integrated/') ||
+       findHardwareNode(root, '/gpu-intel/'));
 
   if (!gpuNode) {
     function findGPU(root) {
@@ -166,7 +227,8 @@ function parseLHMJson(root) {
     result.gpu.temp = findBySensorId(tempSensors, '/temperature/0')
       || findExactSensor(tempSensors, 'Temperature', 'GPU Core', 'GPU Hot Spot');
     result.gpu.load = findBySensorId(loadSensors, '/load/0')
-      || findExactSensor(loadSensors, 'Load', 'GPU Core');
+      || findExactSensor(loadSensors, 'Load', 'GPU Core')
+      || (loadSensors.length ? Math.max(0, ...loadSensors.map(s => parseValue(s.Value))) : 0); // iGPU 兜底：D3D 引擎负载最大值
     result.gpu.power = findBySensorId(powerSensors, '/power/3', '/power/0')
       || findExactSensor(powerSensors, 'Power', 'GPU Package', 'GPU Power');
     result.gpu.clock = Math.round(
@@ -246,10 +308,50 @@ function parseLHMJson(root) {
   return result;
 }
 
+// ── 网络真满量程：NIC Connection Speed（链路速率）解析 ──
+// LHM 的 "Connection Speed" 是 NIC 硬件下独立传感器（与 throughput 上下行不同），
+// 单位为 bit（Kbps/Mbps/Gbps），需 ÷8 转成字节 B/s。按名称在同 NIC 节点内定位。
+
+// 解析 Connection Speed 字符串（如 "1 Gbit/s" / "1000 Mbps" / "100 Mbit/s"）→ 字节 B/s
+function parseLinkSpeedToBytes(str) {
+  const s = (typeof str === 'string') ? str : String(str == null ? '' : str);
+  const m = s.match(/([\d.]+)\s*(k|m|g)?/i);
+  if (!m) return 0;
+  const num = parseFloat(m[1]);
+  if (!isFinite(num)) return 0;
+  const prefix = (m[2] || '').toLowerCase();
+  let multiplier = 1;
+  if (prefix === 'k') multiplier = 1e3;
+  else if (prefix === 'm') multiplier = 1e6;
+  else if (prefix === 'g') multiplier = 1e9;
+  // 默认 bit 单位（LHM Connection Speed 为 bit 单位）；仅当显式出现 "byte" 才按字节处理
+  const isBytes = /\bbyte\b/i.test(s);
+  const bitsPerSec = num * multiplier;
+  return isBytes ? bitsPerSec : bitsPerSec / 8;
+}
+
+// 在 NIC 节点子树内按名称定位 "Connection Speed" 传感器
+function findConnectionSpeedSensor(nicNode) {
+  let found = null;
+  walkSensors(nicNode, (sensor) => {
+    if (!found && ((sensor.Text || '').toLowerCase().includes('connection speed') || (sensor.Text || '').toLowerCase().includes('link speed'))) {
+      found = sensor;
+    }
+  });
+  return found;
+}
+
+// 取某 NIC 节点的 Connection Speed（字节 B/s），无则 0
+function getNicConnectionSpeedBytes(nicNode) {
+  const cs = findConnectionSpeedSensor(nicNode);
+  if (!cs) return 0;
+  return parseLinkSpeedToBytes(cs.Value);
+}
+
 // LHM NIC Throughput 求和（所有网卡上行/下行 Throughput 累加）
 function extractNetworkFromLHM(root) {
-  if (!root || !root.Children) return { up: 0, down: 0, upUnit: 'MB/s', downUnit: 'MB/s' };
-  let totalUp = 0, totalDown = 0;
+  if (!root || !root.Children) return { up: 0, down: 0, upUnit: 'MB/s', downUnit: 'MB/s', connectionSpeed: 0 };
+  let totalUp = 0, totalDown = 0, linkSpeedBytes = 0;
 
   function walkNic(node) {
     if (!node || !node.Children) return;
@@ -259,32 +361,411 @@ function extractNetworkFromLHM(root) {
         const tpSensors = collectSensors(child, 'Throughput');
         for (const s of tpSensors) {
           const sid = (s.SensorId || '').toLowerCase();
-          const val = parseValue(s.Value);
+          // 优先用 RawValue（LHM 输出的真实 B/s 数字），缺失时回退解析 Value 字符串
+          const val = (s.RawValue !== null && s.RawValue !== undefined)
+            ? parseRaw(s.RawValue)
+            : parseValue(s.Value);
           if (sid.endsWith('/throughput/7')) totalUp += val;
           if (sid.endsWith('/throughput/8')) totalDown += val;
         }
+        // 同 NIC 节点的链路速率（Connection Speed 或 Link Speed，bit 单位）→ 字节 B/s；
+        // 取所有 NIC 中的【最大】链路速率作为网络 chart 真满量程（多网卡累加成错，见 BugFix 说明）
+        const _cs = getNicConnectionSpeedBytes(child);
+        if (_cs > linkSpeedBytes) linkSpeedBytes = _cs;
       }
       walkNic(child);
     }
   }
   walkNic(root);
 
-  const upMB = totalUp / 1048576;
-  const downMB = totalDown / 1048576;
-
+  // 以 B/s 累加后统一按字节单位缩放，避免二次换算丢精度
+  const up = formatThroughput(totalUp);
+  const down = formatThroughput(totalDown);
   return {
-    up: +upMB.toFixed(2),
-    down: +downMB.toFixed(2),
-    upUnit: upMB > 1 ? 'MB/s' : 'KB/s',
-    downUnit: downMB > 1 ? 'MB/s' : 'KB/s',
+    up: up.value,
+    down: down.value,
+    upUnit: up.unit,
+    downUnit: down.unit,
+    connectionSpeed: linkSpeedBytes,  // 当前所有 NIC 链路速率之和（字节 B/s）
   };
+}
+
+// ========= 传感器引用缓存（T-C：避免每 tick 全树遍历）=========
+// 每 tick 仅 1 次建索引 + 按 SensorId 直读；缺失或 TTL 到期回退原慢路径，数值 100% 等价
+let _sensorIndex = null;   // Map<SensorId, sensorNode>
+let _roleIds = null;       // 各角色命中的 SensorId 选择列表
+let _indexTick = 0;
+const SENSOR_TTL = 60;     // 每 60 tick 强制重校验拓扑
+
+// 节点匹配辅助（返回 node，而非 value，便于记录 SensorId）
+function matchNodeBySensorId(sensors, ...suffixes) {
+  for (const suffix of suffixes) {
+    for (const s of sensors) {
+      if (s.SensorId && s.SensorId.endsWith(suffix)) return s;
+    }
+  }
+  return null;
+}
+function matchExactNode(sensors, typeName, ...exactNames) {
+  for (const name of exactNames) {
+    const lower = name.toLowerCase();
+    for (const s of sensors) {
+      if (s.Type === typeName && (s.Text || '').toLowerCase() === lower) return s;
+    }
+  }
+  return null;
+}
+function firstPositiveLoadNode(sensors) {
+  for (const s of sensors) {
+    if (s.Type === 'Load') {
+      const v = parseValue(s.Value);
+      if (v > 0) return s;
+    }
+  }
+  return null;
+}
+// iGPU 兜底：返回同节点下所有 Load 传感器中值最大者的 SensorId（无则 null）
+function maxLoadSensorId(loadSensors) {
+  let maxVal = -1, maxId = null;
+  for (const s of (loadSensors || [])) {
+    const v = parseValue(s.Value);
+    if (v > maxVal) { maxVal = v; maxId = s.SensorId; }
+  }
+  return maxId;
+}
+function sidOf(node) {
+  return (node && node.SensorId) ? node.SensorId : null;
+}
+// 收集所有 Fan 传感器（对应 parseLHMJson 的 collectFanNodes）
+function collectAllFanSensors(node, out) {
+  if (!node || !node.Children) return;
+  for (const child of node.Children) {
+    const sensors = collectSensors(child, 'Fan');
+    if (sensors.length > 0) out.push(...sensors);
+    collectAllFanSensors(child, out);
+  }
+}
+// 通用 GPU 节点发现（对应 parseLHMJson 的 findGPU）
+function findGpuNode(root) {
+  if (!root || !root.Children) return null;
+  for (const child of root.Children) {
+    if (child.HardwareId && (child.HardwareId.toLowerCase().includes('/gpu') ||
+        (child.Text || '').toLowerCase().includes('radeon') ||
+        (child.Text || '').toLowerCase().includes('nvidia'))) {
+      return child;
+    }
+    const found = findGpuNode(child);
+    if (found) return found;
+  }
+  return null;
+}
+// 收集 NIC throughput 的 up/down SensorId（对应 extractNetworkFromLHM 的 walkNic）
+function collectNicThroughput(root, upOut, downOut, linkOut) {
+  if (!root || !root.Children) return;
+  for (const child of root.Children) {
+    const hwId = (child.HardwareId || '').toLowerCase();
+    if (hwId.includes('/nic/')) {
+      const tpSensors = collectSensors(child, 'Throughput');
+      for (const s of tpSensors) {
+        const sid = (s.SensorId || '').toLowerCase();
+        if (sid.endsWith('/throughput/7')) upOut.push(s.SensorId);
+        if (sid.endsWith('/throughput/8')) downOut.push(s.SensorId);
+      }
+      // 同 NIC 节点的 Connection Speed 传感器（链路速率），用于网络真满量程（与慢路径 100% 一致）
+      const cs = findConnectionSpeedSensor(child);
+      if (cs && cs.SensorId) linkOut.push(cs.SensorId);
+    }
+    collectNicThroughput(child, upOut, downOut, linkOut);
+  }
+}
+
+// 迭代式建索引（避免递归/回调开销），存储 node 引用；索引仅用于拓扑检测与按 sid 直读，
+// 数值在 readFastPath 中按需 parseValue（仅 ~30 个被引用 sid，远少于全树 384 个）。
+function buildSensorIndex(root) {
+  const m = new Map();
+  if (!root || !root.Children) return m;
+  const stack = [root];
+  while (stack.length) {
+    const node = stack.pop();
+    const ch = node.Children;
+    if (!ch || !ch.length) continue;
+    for (let i = 0; i < ch.length; i++) {
+      const child = ch[i];
+      if (child.Type && child.SensorId) m.set(child.SensorId, child);
+      if (child.Children && child.Children.length) stack.push(child);
+    }
+  }
+  return m;
+}
+
+// 与 discoverRoleIds 配合：忽略 null/空（硬件本就不存在），仅当记录的非空 SensorId 在"当前 raw 新索引"中缺失时判定拓扑变化
+// 说明：相比原规格的 `!sid ||` 改为仅检查非空 sid，避免"硬件不存在"导致每 tick 重建索引而引入额外开销，
+// 且快路径对缺失角色返回与原慢路径一致的 0，行为等价。
+function roleIdsAllPresent(roleIds, index) {
+  if (!roleIds) return false;
+  const check = (x) => {
+    if (typeof x === 'string') return !x || !!index.get(x);
+    if (Array.isArray(x)) {
+      for (const sid of x) if (!check(sid)) return false;
+    } else if (x && typeof x === 'object') {
+      for (const k of Object.keys(x)) if (!check(x[k])) return false;
+    }
+    return true;
+  };
+  return check(roleIds);
+}
+
+// 复用原 parseLHMJson / extractNetworkFromLHM 的匹配顺序，仅记录命中的 SensorId 选择列表
+// 每个"选择列表"对应原函数中一个 `findBySensorId(...) || findExactSensor(...)` 的 || 链：
+// 列表元素按优先级排列，readFastPath 在读取时按 `||` 语义取首个非空（非零）值。
+function discoverRoleIds(raw, selectedGpuId) {
+  const roleIds = {
+    cpu:    { temp: [], load: [], clock: [], power: [] },
+    cpuTempFallback: [],
+    gpu:    { temp: [], load: [], power: [], clock: [], memUsed: [], memTotal: [], memFree: [] },
+    memory: { percent: [], used: [], available: [] },
+    fan:    [],
+    network: { up: [], down: [], linkSpeed: [] },
+  };
+  if (!raw || !raw.Children) return roleIds;
+
+  // ── CPU ──
+  const cpuNode = findHardwareNode(raw, '/amdcpu/') || findHardwareNode(raw, '/intelcpu/');
+  if (cpuNode) {
+    const tempSensors  = collectSensors(cpuNode, 'Temperature');
+    const loadSensors  = collectSensors(cpuNode, 'Load');
+    const clockSensors = collectSensors(cpuNode, 'Clock');
+    const powerSensors = collectSensors(cpuNode, 'Power');
+    roleIds.cpu.temp.push(
+      sidOf(matchNodeBySensorId(tempSensors, '/temperature/2', '/temperature/0')),
+      sidOf(matchExactNode(tempSensors, 'Temperature', 'Core (Tctl/Tdie)', 'CPU Package', 'Core Max'))
+    );
+    roleIds.cpu.load.push(
+      sidOf(matchNodeBySensorId(loadSensors, '/load/0')),
+      sidOf(matchExactNode(loadSensors, 'Load', 'CPU Total'))
+    );
+    roleIds.cpu.clock.push(
+      sidOf(matchNodeBySensorId(clockSensors, '/clock/1', '/clock/0')),
+      sidOf(matchExactNode(clockSensors, 'Clock', 'Cores (Average)', 'Core Average'))
+    );
+    roleIds.cpu.power.push(
+      sidOf(matchNodeBySensorId(powerSensors, '/power/0')),
+      sidOf(matchExactNode(powerSensors, 'Power', 'Package', 'CPU Package'))
+    );
+  }
+  // CPU 温度后备（主板 SuperIO）：仅当主 temp 未命中任何 SensorId 时记录
+  if (!roleIds.cpu.temp.length || roleIds.cpu.temp.every((s) => !s)) {
+    const lpcNode = findHardwareNode(raw, '/lpc/');
+    if (lpcNode) {
+      const lpcTempSensors = collectSensors(lpcNode, 'Temperature');
+      roleIds.cpuTempFallback.push(sidOf(matchExactNode(lpcTempSensors, 'Temperature', 'CPU')));
+    }
+  }
+
+  // ── GPU ──
+  let gpuNode = selectedGpuId
+    ? findHardwareNodeById(raw, selectedGpuId)
+    : (findHardwareNode(raw, '/gpu-amd/') ||
+       findHardwareNode(raw, '/gpu-nvidia/') ||
+       findHardwareNode(raw, '/nvgpu/') ||
+       findHardwareNode(raw, '/amdgpu/') ||
+       findHardwareNode(raw, '/gpu-intel-integrated/') ||
+       findHardwareNode(raw, '/gpu-intel/'));
+  if (!gpuNode) gpuNode = findGpuNode(raw);
+  if (gpuNode) {
+    const tempSensors = collectSensors(gpuNode, 'Temperature');
+    const loadSensors = collectSensors(gpuNode, 'Load');
+    const powerSensors = collectSensors(gpuNode, 'Power');
+    const clockSensors = collectSensors(gpuNode, 'Clock');
+    const smallDataSensors = collectSensors(gpuNode, 'SmallData');
+    roleIds.gpu.temp.push(
+      sidOf(matchNodeBySensorId(tempSensors, '/temperature/0')),
+      sidOf(matchExactNode(tempSensors, 'Temperature', 'GPU Core', 'GPU Hot Spot'))
+    );
+    roleIds.gpu.load.push(
+      sidOf(matchNodeBySensorId(loadSensors, '/load/0')),
+      sidOf(matchExactNode(loadSensors, 'Load', 'GPU Core')),
+      maxLoadSensorId(loadSensors) // iGPU 兜底：同节点所有 Load 传感器最大值（已为 SensorId，勿用 sidOf 包裹）
+    );
+    roleIds.gpu.power.push(
+      sidOf(matchNodeBySensorId(powerSensors, '/power/3', '/power/0')),
+      sidOf(matchExactNode(powerSensors, 'Power', 'GPU Package', 'GPU Power'))
+    );
+    roleIds.gpu.clock.push(
+      sidOf(matchNodeBySensorId(clockSensors, '/clock/0')),
+      sidOf(matchExactNode(clockSensors, 'Clock', 'GPU Core'))
+    );
+    roleIds.gpu.memUsed.push(
+      sidOf(matchNodeBySensorId(smallDataSensors, '/smalldata/0')),
+      sidOf(matchExactNode(smallDataSensors, 'SmallData', 'GPU Memory Used'))
+    );
+    roleIds.gpu.memTotal.push(
+      sidOf(matchNodeBySensorId(smallDataSensors, '/smalldata/2')),
+      sidOf(matchExactNode(smallDataSensors, 'SmallData', 'GPU Memory Total'))
+    );
+    roleIds.gpu.memFree.push(
+      sidOf(matchNodeBySensorId(smallDataSensors, '/smalldata/1')),
+      sidOf(matchExactNode(smallDataSensors, 'SmallData', 'GPU Memory Free'))
+    );
+  }
+
+  // ── 内存 ──
+  const memNode = findHardwareNode(raw, '/ram');
+  if (memNode) {
+    const loadSensors = collectSensors(memNode, 'Load');
+    const dataSensors = collectSensors(memNode, 'Data');
+    let usedNode = null, availNode = null, memTextNode = null;
+    for (const s of loadSensors) {
+      if ((s.Text || '').toLowerCase().includes('memory')) memTextNode = memTextNode || s;
+    }
+    roleIds.memory.percent.push(sidOf(memTextNode), sidOf(firstPositiveLoadNode(loadSensors)));
+    for (const s of dataSensors) {
+      const text = (s.Text || '').toLowerCase();
+      if (text.includes('used') && !text.includes('available')) usedNode = usedNode || s;
+      if (text.includes('available')) availNode = availNode || s;
+    }
+    roleIds.memory.used.push(sidOf(usedNode));
+    roleIds.memory.available.push(sidOf(availNode));
+  }
+
+  // ── 风扇 ──
+  const fanSensors = [];
+  collectAllFanSensors(raw, fanSensors);
+  roleIds.fan = fanSensors.map((s) => s.SensorId).filter(Boolean);
+
+  // ── 网络 ──
+  const netUp = [], netDown = [], netLink = [];
+  collectNicThroughput(raw, netUp, netDown, netLink);
+  roleIds.network.up = netUp;
+  roleIds.network.down = netDown;
+  roleIds.network.linkSpeed = netLink;
+
+  return roleIds;
+}
+
+// 按已记录的 SensorId 选择列表直读数值，复用原 parseLHMJson / extractNetworkFromLHM 的算术语义
+function readFastPath(index, roleIds) {
+  if (!index || !roleIds) return null;
+
+  const result = {
+    cpu:    { load: 0, temp: 0, clock: 0, power: 0 },
+    gpu:    { load: 0, temp: 0, memUsed: 0, memTotal: 0, power: 0, clock: 0 },
+    memory: { percent: 0, used: 0, total: 0 },
+    fan:    { rpm: 0 },
+    network: { up: 0, down: 0, upUnit: 'MB/s', downUnit: 'MB/s' },
+    source: 'librehardwaremonitor',
+  };
+
+  // 按选择列表取首个非零值，等价原 findBySensorId || findExactSensor 的 || 语义
+  const readChoice = (choices) => {
+    let acc = 0;
+    for (const sid of (choices || [])) {
+      const n = sid ? index.get(sid) : null;
+      const v = n ? parseValue(n.Value) : 0;
+      acc = acc || v;
+    }
+    return acc;
+  };
+
+  // CPU
+  result.cpu.temp = readChoice(roleIds.cpu.temp) || readChoice(roleIds.cpuTempFallback);
+  result.cpu.load = readChoice(roleIds.cpu.load);
+  result.cpu.clock = Math.round(readChoice(roleIds.cpu.clock));
+  result.cpu.power = readChoice(roleIds.cpu.power);
+
+  // GPU
+  result.gpu.temp = readChoice(roleIds.gpu.temp);
+  result.gpu.load = readChoice(roleIds.gpu.load);
+  result.gpu.power = readChoice(roleIds.gpu.power);
+  result.gpu.clock = Math.round(readChoice(roleIds.gpu.clock));
+  result.gpu.memUsed = Math.round(readChoice(roleIds.gpu.memUsed) / 10.24) / 100;
+  result.gpu.memTotal = Math.round(readChoice(roleIds.gpu.memTotal) / 10.24) / 100;
+  if (result.gpu.memTotal === 0 && result.gpu.memUsed > 0) {
+    const memFree = Math.round(readChoice(roleIds.gpu.memFree) / 10.24) / 100;
+    if (memFree > 0) {
+      result.gpu.memTotal = Math.round((result.gpu.memUsed + memFree) * 100) / 100;
+    }
+  }
+
+  // 内存
+  result.memory.percent = readChoice(roleIds.memory.percent);
+  const memUsed = readChoice(roleIds.memory.used);
+  const memAvailable = readChoice(roleIds.memory.available);
+  result.memory.used = memUsed;
+  result.memory.total = memUsed + memAvailable;
+  if (result.memory.total === 0 && result.memory.percent > 0) {
+    result.memory.total = Math.round(result.memory.used / result.memory.percent * 100) / 100;
+  }
+
+  // 风扇：所有 Fan rpm 取最大值
+  if (roleIds.fan && roleIds.fan.length > 0) {
+    const rpms = roleIds.fan.map((sid) => {
+      const n = sid ? index.get(sid) : null;
+      return n ? parseValue(n.Value) : 0;
+    }).filter((r) => r > 0);
+    if (rpms.length > 0) result.fan.rpm = Math.max(...rpms);
+  }
+
+  // 网络：up/down 各自累加（优先 RawValue 真实 B/s，回退 Value 字符串）
+  let totalUp = 0, totalDown = 0;
+  for (const sid of (roleIds.network.up || [])) {
+    const n = index.get(sid);
+    if (n) totalUp += (n.RawValue !== null && n.RawValue !== undefined) ? parseRaw(n.RawValue) : parseValue(n.Value);
+  }
+  for (const sid of (roleIds.network.down || [])) {
+    const n = index.get(sid);
+    if (n) totalDown += (n.RawValue !== null && n.RawValue !== undefined) ? parseRaw(n.RawValue) : parseValue(n.Value);
+  }
+  // 以 B/s 累加后统一按字节单位缩放，避免二次换算丢精度
+  const netUp = formatThroughput(totalUp);
+  const netDown = formatThroughput(totalDown);
+  // 同 NIC 的 Connection Speed（bit 单位）→ 字节 B/s，作为网络 chart 真满量程（与慢路径 100% 一致）
+  let linkSpeedBytes = 0;
+  for (const sid of (roleIds.network.linkSpeed || [])) {
+    const n = index.get(sid);
+    // 多网卡：取【最大】链路速率作为真满量程（不再累加，避免虚拟/慢速网卡压低量程）
+    if (n) { const _cs = parseLinkSpeedToBytes(n.Value); if (_cs > linkSpeedBytes) linkSpeedBytes = _cs; }
+  }
+  result.network = {
+    up: netUp.value,
+    down: netDown.value,
+    upUnit: netUp.unit,
+    downUnit: netDown.unit,
+    connectionSpeed: linkSpeedBytes,  // 字节 B/s
+  };
+
+  return result;
+}
+
+// 统一解析入口：命中缓存则快路径直读，否则回退原慢路径（行为 100% 等价）
+function resolveLHM(raw, settings) {
+  // 每 tick 仅一次轻量建索引（单次 walk）；用"当前 raw 的新索引"做拓扑检测，
+  // 避免旧实现中拿"上一次缓存在同一历史 tick 的 _roleIds 与 _sensorIndex 互比"而永远为 true、
+  // 导致传感器消失后最多 60 tick 才重建（样例 D：移除 CPU Load 仍返回陈旧值）。
+  const selectedGpuId = (settings && settings.gpuId) ? settings.gpuId : _selectedGpuId;
+  const newIndex = buildSensorIndex(raw);
+  const topoChanged = !_roleIds ||
+    (++_indexTick % SENSOR_TTL === 0) || !roleIdsAllPresent(_roleIds, newIndex);
+  if (topoChanged) {
+    _sensorIndex = newIndex;
+    _roleIds = discoverRoleIds(raw, selectedGpuId);   // 拓扑变化：重发现（昂贵，仅在变化时发生）
+  } else {
+    _sensorIndex = newIndex;           // 拓扑稳定：仍用当前索引，数值变化即时可见
+  }
+  const fast = readFastPath(_sensorIndex, _roleIds);
+  if (!fast) {
+    const parsed = parseLHMJson(raw, selectedGpuId);
+    _roleIds = discoverRoleIds(raw, selectedGpuId);
+    return { ...parsed, network: extractNetworkFromLHM(raw) };
+  }
+  return fast;
 }
 
 // ========= 全局数据管道（发布-订阅 + Promise 去重）=========
 let _pendingFetch = null;           // 进行中的 fetch Promise（去重用）
 const _dataSubscribers = new Set(); // callback 集合
 let _globalTimer = null;            // 全局轮询定时器
-const GLOBAL_INTERVAL = 1000;       // 全局轮询间隔 1000ms
+let _globalInterval = 1000;         // 全局轮询间隔（可经 setRefreshInterval 调整，默认 1000ms）
 
 // 获取数据（直连 LHM HTTP API，带 Promise 去重）
 async function fetchHardwareData() {
@@ -295,12 +776,10 @@ async function fetchHardwareData() {
       const res = await fetch(LHM_URL, { signal: AbortSignal.timeout(3000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const raw = await res.json();
-      const parsed = parseLHMJson(raw);
-      const network = extractNetworkFromLHM(raw);
+      const resolved = resolveLHM(raw);
       return {
         success: true,
-        ...parsed,
-        network,
+        ...resolved,
         diskUsage: [],  // LHM disk 数据零散，暂不提取
       };
     } catch (e) {
@@ -333,11 +812,20 @@ function startGlobalTimer() {
         try { cb(data); } catch (e) { console.error('[HardwareMonitor] 订阅者回调异常:', e); }
       }
     }
-  }, GLOBAL_INTERVAL);
+  }, _globalInterval);
 }
 
 function stopGlobalTimer() {
   if (_globalTimer) { clearInterval(_globalTimer); _globalTimer = null; }
+}
+
+// T-F：可配置刷新间隔（本期不接 UI，保持默认 1000ms）
+// 调用即 clamp 到 250–5000ms 并重启定时器；未变化时直接返回
+function setRefreshInterval(ms) {
+  const clamped = Math.max(250, Math.min(5000, Math.round(ms) || 1000));
+  if (clamped === _globalInterval) return;
+  _globalInterval = clamped;
+  if (_globalTimer) { stopGlobalTimer(); startGlobalTimer(); }
 }
 
 // 默认显示配置（会被 settings 覆盖）
@@ -359,13 +847,14 @@ const DEFAULT_CONFIG = {
   showProgress: true,          // 是否显示进度环
   chartStyle: 'ring',          // 图表样式: 'ring' | 'wave'
   showHistory: true,           // 是否显示历史曲线
+  enableSharpen: false,        // 是否启用图标锐化（默认关闭，省去每 tick 的卷积计算）
 };
 
 // 监视类型定义（完整对齐 System Vitals）
 const MONITOR_TYPES = {
   // 温度
-  'cpu-temp':       { title: 'CPUt',    unit: '°C',  category: 'temperature', field: 'cpu.temp',          min: 0,   max: 100, color: '#ff6644' },
-  'gpu-temp':       { title: 'GPUt',    unit: '°C',  category: 'temperature', field: 'gpu.temp',          min: 0,   max: 100, color: '#4488ff' },
+  'cpu-temp':       { title: 'CPUt',    unit: '°C',  category: 'temperature', field: 'cpu.temp',          min: 0,   max: 110, color: '#ff6644' },
+  'gpu-temp':       { title: 'GPUt',    unit: '°C',  category: 'temperature', field: 'gpu.temp',          min: 0,   max: 110, color: '#4488ff' },
   // 使用率 %
   'cpu-percent':    { title: 'CPU%',    unit: '%',    category: 'percent',     field: 'cpu.load',          min: 0,   max: 100, color: '#00ffcc' },
   'gpu-percent':    { title: 'GPU%',    unit: '%',    category: 'percent',     field: 'gpu.load',          min: 0,   max: 100, color: '#4488ff' },
@@ -432,6 +921,27 @@ function drawBackground(ctx, config) {
   ctx.fillRect(0, 0, 144, 144);
 }
 
+// T-E：背景渐变预缓存（按 valueColor|monitorType 缓存 144×144 offscreen canvas）
+// 输出像素与原 drawBackground 完全一致（3 段线性渐变 + 径向高光 + 主色 0.03 叠加），仅把"重建"换成"贴图"
+const _bgCache = new Map(); // key: `${valueColor}|${monitorType}` → offscreen canvas
+function getCachedBackground(valueColor, monitorType) {
+  const k = `${valueColor}|${monitorType}`;
+  let cv = _bgCache.get(k);
+  if (cv) return cv;
+  cv = document.createElement('canvas'); cv.width = 144; cv.height = 144;
+  const c = cv.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 144, 144);
+  g.addColorStop(0, '#0f0f1a'); g.addColorStop(0.5, '#1a1a2e'); g.addColorStop(1, '#0a0a15');
+  c.fillStyle = g; c.fillRect(0, 0, 144, 144);
+  const rg = c.createRadialGradient(72, 50, 0, 72, 50, 80);
+  rg.addColorStop(0, 'rgba(255,255,255,0.05)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = rg; c.fillRect(0, 0, 144, 144);
+  c.fillStyle = hexToRgba(valueColor || '#00ffcc', 0.03); c.fillRect(0, 0, 144, 144);
+  _bgCache.set(k, cv);
+  if (_bgCache.size > 32) _bgCache.clear(); // 超过 32 条时清空重建，避免无限增长
+  return cv;
+}
+
 // 绘制增强的进度环（发光、渐变、刻度、末端圆点）
 function drawProgressRing(ctx, cx, cy, r, ratio, config) {
   const { valueColor = '#00ffcc' } = config;
@@ -455,7 +965,7 @@ function drawProgressRing(ctx, cx, cy, r, ratio, config) {
   ctx.lineWidth = 12;
 
   ctx.shadowColor = valueColor;
-  ctx.shadowBlur = 15;
+  ctx.shadowBlur = 8;
 
   ctx.stroke();
   ctx.shadowBlur = 0; // 重置
@@ -483,7 +993,7 @@ function drawProgressRing(ctx, cx, cy, r, ratio, config) {
   ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
   ctx.fillStyle = '#ffffff';
   ctx.shadowColor = '#ffffff';
-  ctx.shadowBlur = 6;
+  ctx.shadowBlur = 4;
   ctx.fill();
   ctx.shadowBlur = 0;
   ctx.shadowColor = 'rgba(0,0,0,0)';
@@ -712,8 +1222,8 @@ function drawIcon(config, value, extraText, history) {
   // 0. 彻底清空画布
   ctx.clearRect(0, 0, 144, 144);
 
-  // 1. 渐变背景
-  drawBackground(ctx, { valueColor, monitorType });
+  // 1. 渐变背景（T-E：改用预缓存贴图，避免每 tick 重建渐变）
+  ctx.drawImage(getCachedBackground(valueColor, monitorType), 0, 0);
 
   // 2. 图表（根据样式）— 用 save/restore 隔离状态
   ctx.save();
@@ -721,12 +1231,20 @@ function drawIcon(config, value, extraText, history) {
     // T04c: minimal 预设 showProgress=false 时不绘环和图标
     if (showProgress && max > min) {
       const cx = 72, cy = 68, r = 54;
-      const ratio = Math.max(0, Math.min(1, (value - min) / (max - min)));
+      let ratio;
+      if (monitorType === 'network-up' || monitorType === 'network-down') {
+        // 图形以 B/s 基准归一化；graphMaxBps 在 _handleData 中恒 > 0（未知链路回退 1Gbps）
+        const gv = config.graphValueBps || 0, gm = config.graphMaxBps || 1;
+        ratio = Math.max(0, Math.min(1, gm > 0 ? gv / gm : 0));
+      } else {
+        ratio = Math.max(0, Math.min(1, (value - min) / (max - min)));
+      }
       drawProgressRing(ctx, cx, cy, r, ratio, { valueColor });
     }
   } else if (chartStyle === 'wave') {
     // 曲线图 — 对 network/diskIO 根据历史数据动态调整 max
-    const chartMax = getChartMax(config, history, value, min, max);
+    const isNet = (monitorType === 'network-up' || monitorType === 'network-down');
+    const chartMax = getChartMax(config, history, isNet ? (config.graphValueBps || 0) : value, min, isNet ? (config.graphMaxBps || max) : max);
     drawWaveChart(ctx, history || [value], { valueColor, min, max: chartMax });
   }
   ctx.restore();
@@ -797,7 +1315,8 @@ function drawIcon(config, value, extraText, history) {
     }
 
     // 波形图，Y 范围下移以避开顶部文字
-    const chartMax = getChartMax(config, history, value, min, max);
+    const isNet = (monitorType === 'network-up' || monitorType === 'network-down');
+    const chartMax = getChartMax(config, history, isNet ? (config.graphValueBps || 0) : value, min, isNet ? (config.graphMaxBps || max) : max);
     drawWaveChart(ctx, history || [value], { valueColor, min, max: chartMax });
   }
 
@@ -810,23 +1329,70 @@ function drawIcon(config, value, extraText, history) {
     ctx.fillText(extraText, 72, 140);
   }
 
-  applySharpen(ctx, 144, 144, 1.5);  // 增强4：轻度锐化
+  if (config.enableSharpen) {
+    applySharpen(ctx, 144, 144, 1.5);  // 增强4：轻度锐化（默认关闭）
+  }
 
   return canvas.toDataURL('image/png');
 }
 
-// 动态计算图表 max 值（对 network/diskIO 根据历史数据自适应）
+// ═══════════════════════════════════════════════════════════════
+//  图表量程自适应（clock/power 类别）
+//  - 维护 per-metric 观测峰值 _observedPeak（模块级，key = monitorType），ring/wave 共用
+//  - max = min( max(observedPeak * 1.1, 冷启地板, staticFloor), 硬顶 )
+//  - 冷启地板 = 原静态上限 / 10；staticFloor = 绝对下限 0.1（防除零）
+//  - 硬顶封死异常尖峰（上限远高于设计静态上限）
+//  - 严禁使用 LHM 传感器的 Min/Max 字段（会话运行极值，冷启≈0，会除零/误导）
+// ═══════════════════════════════════════════════════════════════
+const _observedPeak = {};        // { [monitorType]: number } 平滑观测峰值（MHz / W 等原单位）
+const PEAK_DECAY = 0.995;        // 峰值慢速衰减：下降缓慢、上升即时（峰保持）
+const ADAPTIVE_ABS_FLOOR = 0.1;  // staticFloor：绝对下限，避免除零
+const ADAPTIVE_HARD_CAP = {      // 硬顶：封死异常尖峰
+  'cpu-power': 1000,   // W
+  'gpu-power': 1500,   // W
+  'cpu-clock': 8000,   // MHz
+  'gpu-clock': 4000,   // MHz
+};
+
+function isAdaptiveMetric(monitorType) {
+  return Object.prototype.hasOwnProperty.call(ADAPTIVE_HARD_CAP, monitorType);
+}
+
+// 更新观测峰值：上升即时（峰保持），下降按 PEAK_DECAY 缓慢回落，避免瞬时抖动与除零
+function updateObservedPeak(monitorType, currentValue) {
+  if (!isAdaptiveMetric(monitorType)) return;
+  const v = (typeof currentValue === 'number' && isFinite(currentValue)) ? currentValue : 0;
+  const prev = _observedPeak[monitorType] ?? 0;
+  _observedPeak[monitorType] = v > prev ? v : prev * PEAK_DECAY;
+}
+
+// 计算自适应 max（单位与 value 一致：MHz / W）
+// max = min( max(observedPeak * 1.1, 冷启地板, staticFloor), 硬顶 )
+function getAdaptiveMax(monitorType, staticMax) {
+  const peak = _observedPeak[monitorType] ?? 0;
+  const coldFloor = (typeof staticMax === 'number' && isFinite(staticMax) && staticMax > 0) ? staticMax / 10 : ADAPTIVE_ABS_FLOOR;
+  const dynamicMax = Math.max(peak * 1.1, coldFloor, ADAPTIVE_ABS_FLOOR); // 含 staticFloor
+  const cap = ADAPTIVE_HARD_CAP[monitorType] ?? (coldFloor * 4);          // 硬顶封死异常尖峰
+  return Math.min(dynamicMax, cap);
+}
+
+// 动态计算图表 max 值
+// - network/diskIO：沿用历史自适应（network 的 staticMax 已由 Connection Speed 注入，作为真满量程上限）
+// - clock/power 等自适应类别：config.max 已在 _handleData 中写入观测峰值自适应值，此处直接返回即可
 function getChartMax(config, history, currentValue, staticMin, staticMax) {
   const { category } = config;
   // 仅对 network/diskIO 做动态缩放，其他类别保持静态 max
   if (category !== 'network' && category !== 'diskIO') return staticMax;
 
+  // 网络类：history 已统一为 B/s 基准，满量程用 Connection Speed（graphMaxBps），
+  // 未知链路时回退到传入的 staticMax（调用方对 network 已传 graphMaxBps）。
+  const baseMax = category === 'network' ? (config.graphMaxBps || staticMax) : staticMax;
   const vals = history && history.length > 0 ? history : [currentValue];
   const historyMax = Math.max(...vals.filter(v => v != null), currentValue);
 
-  // 取 historyMax * 1.5 与 staticMax/10 中的较大值，确保低流量时不贴底
-  const dynamicMax = Math.max(historyMax * 1.5, staticMax / 10, 0.1);
-  return Math.min(dynamicMax, staticMax); // 不超过原始静态上限
+  // 取 historyMax * 1.5 与 baseMax/10 中的较大值，确保低流量时不贴底
+  const dynamicMax = Math.max(historyMax * 1.5, baseMax / 10, 0.1);
+  return Math.min(dynamicMax, baseMax); // 不超过链路真满量程
 }
 
 // 绘制曲线图（贝塞尔曲线 + 渐变填充）— T03: y range 70-130
@@ -919,6 +1485,10 @@ class SystemVitalsAction {
     this.history = [];
     this.historyMax = 10;  // T02b: 硬编码 10
 
+    // 渲染缓存 + 脏检查（T-A：值未变化则跳过绘制/编码/发送）
+    this._lastRenderKey = null;
+    this._lastIcon = null;
+
     // 最新数值（用于同步绘制）
     this.latestValue = 0;
     this.latestExtraText = '';
@@ -944,9 +1514,8 @@ class SystemVitalsAction {
         value = getDataByField(data, typeInfo.field);
       } else if (typeInfo.field.startsWith('gpu.')) {
         value = getDataByField(data, typeInfo.field);
-        // 诊断日志：输出 GPU 数据的实际值以定位渲染偏差
-        if (this.monitorType.startsWith('gpu-')) {
-          console.log(`[HWDiag] ${this.monitorType}: raw=${value}, data.gpu=`, JSON.stringify(data.gpu));
+        if (DEBUG && this.monitorType.startsWith('gpu-')) {
+          console.log(`[HWDiag] ${this.monitorType}: raw=${value}`);
         }
       } else if (typeInfo.field.startsWith('memory.')) {
         value = getDataByField(data, typeInfo.field);
@@ -959,15 +1528,22 @@ class SystemVitalsAction {
       } else if (typeInfo.field.startsWith('network.')) {
         value = getDataByField(data, typeInfo.field);
         // 动态单位：LHM 返回 upUnit/downUnit 元数据（Fix 5: 仅在实际变化时更新）
-        if (typeInfo.field === 'network.up' && data.network && data.network.upUnit) {
-          if (this.config.unit !== data.network.upUnit) {
-            this.config.unit = data.network.upUnit;
-          }
-        } else if (typeInfo.field === 'network.down' && data.network && data.network.downUnit) {
-          if (this.config.unit !== data.network.downUnit) {
-            this.config.unit = data.network.downUnit;
+        const dir = this.monitorType === 'network-up' ? 'up' : 'down';
+        const unitKey = dir + 'Unit';
+        if (data.network && data.network[unitKey]) {
+          if (this.config.unit !== data.network[unitKey]) {
+            this.config.unit = data.network[unitKey];
           }
         }
+        // 图形渲染统一以字节/秒(B/s)为基准，规避"显示数字 vs max 单位不一致"导致的
+        // 低速顶满 / 单位跳变问题。显示数值与单位保持不变（formatValue 仍用缩放后的 value + config.unit）。
+        const csBytes = (data.network && data.network.connectionSpeed) || 0;
+        const graphValueBps = unitToBytes(value, this.config.unit);
+        let graphMaxBps = this.config.graphMaxBps || 0;
+        if (csBytes > 0) graphMaxBps = csBytes;        // Connection Speed 真满量程（字节 B/s）
+        else if (graphMaxBps <= 0) graphMaxBps = 125e6; // 未知链路速率时保守按 1 Gbps 兜底
+        this.config.graphValueBps = graphValueBps;
+        this.config.graphMaxBps = graphMaxBps;
       } else if (typeInfo.field.startsWith('diskUsage.')) {
         const idx = parseInt(typeInfo.field.split('.')[1]) || 0;
         const diskUsage = data.diskUsage;
@@ -977,13 +1553,24 @@ class SystemVitalsAction {
         }
       }
 
+      // 自适应量程（clock/power）：更新 per-metric 观测峰值并写入 config.max，
+      // ring/wave 共用；公式 max = min(max(observedPeak*1.1, 冷启地板, staticFloor), 硬顶)。
+      // 严禁使用 LHM 传感器的 Min/Max 字段（运行时极值，冷启≈0）。
+      if (isAdaptiveMetric(this.monitorType)) {
+        updateObservedPeak(this.monitorType, value);
+        this.config.max = getAdaptiveMax(this.monitorType, typeInfo.max);
+      }
+
       // 保存最新数值
       this.latestValue = value;
       this.latestExtraText = extraText;
 
       // 更新历史数据
       if (this.config.showHistory) {
-        this.history.push(value);
+        // 网络类：history 存 B/s 基准值，保证波形图在不同显示单位间不跳变
+        const hv = (this.monitorType === 'network-up' || this.monitorType === 'network-down')
+          ? (this.config.graphValueBps || 0) : value;
+        this.history.push(hv);
         if (this.history.length > this.historyMax) {
           this.history.shift();
         }
@@ -997,16 +1584,38 @@ class SystemVitalsAction {
     }
   }
 
+  _computeRenderKey(value) {
+    const c = this.config;
+    const displayVal = formatValue(value, c);
+    const min = c.min || 0;
+    let max = c.max || 1, ratioVal = value, ratioMax = max;
+    if (this.monitorType === 'network-up' || this.monitorType === 'network-down') {
+      ratioVal = c.graphValueBps || 0; ratioMax = c.graphMaxBps || 1;
+    }
+    const ratio = Math.max(0, Math.min(1, (ratioVal - min) / (ratioMax - min)));
+    return [
+      this.monitorType,
+      displayVal, c.unit, min, max,
+      c.valueColor, c.titleColor,
+      c.showProgress ? 1 : 0,
+      c.chartStyle,
+      this.latestExtraText || '',
+      'r' + Math.round(ratio * 100)
+    ].join('|');
+  }
+
   updateDisplay() {
-    // 同步绘制：使用最新数值
     const value = this.latestValue;
-    const extraText = this.latestExtraText;
     const typeInfo = MONITOR_TYPES[this.monitorType];
-
     if (!typeInfo) return;
-
-    // 绘制图标并发送
-    const icon = drawIcon(this.config, value, extraText, this.history);
+    // wave 模式始终重绘（曲线滚动）；其余模式走脏检查
+    if (this.config.chartStyle !== 'wave') {
+      const key = this._computeRenderKey(value);
+      if (key === this._lastRenderKey && this._lastIcon) return; // 无变化：跳过绘制/编码/发送
+      this._lastRenderKey = key;
+    }
+    const icon = drawIcon(this.config, value, this.latestExtraText, this.history);
+    this._lastIcon = icon;
     const bottomText = this.config.title || typeInfo.title || '';
     $UD.setBaseDataIcon(this.context, icon, bottomText);
   }
@@ -1140,6 +1749,15 @@ function applySettings(inst, settings) {
 
   const oldChartStyle = inst.config.chartStyle;
 
+  // 多 GPU：保存手动选择的 GPU HardwareId，变化即强制重建角色索引
+  if (settings.gpuId !== undefined) {
+    const newGpuId = settings.gpuId || '';
+    if (newGpuId !== _selectedGpuId) {
+      _selectedGpuId = newGpuId;
+      _roleIds = null; // GPU 选择变化，下次 resolveLHM 必重建，立即生效
+    }
+  }
+
   // 现有 settings 合并逻辑
   for (const key of Object.keys(settings)) {
     if (inst.config && inst.config.hasOwnProperty(key)) {
@@ -1169,6 +1787,10 @@ function applySettings(inst, settings) {
   }
 
   console.log('[HardwareMonitor] 收到设置更新:', settings, 'for monitorType:', inst.monitorType);
+
+  // T-A：配置变化强制失效渲染缓存，下一帧正常重绘
+  inst._lastRenderKey = null;
+  inst._lastIcon = null;
 
   inst.updateDisplay();
 }
