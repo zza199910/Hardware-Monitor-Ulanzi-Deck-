@@ -16,5 +16,15 @@
     { "Name": "Velocidade Ventoinha", "Tooltip": "Mostrar velocidade da ventoinha em RPM" },
     { "Name": "Upload de Rede", "Tooltip": "Mostrar velocidade de upload da rede" },
     { "Name": "Download de Rede", "Tooltip": "Mostrar velocidade de download da rede" }
-  ]
+  ],
+  "Localization": {
+    "presetStyle": "Estilo predefinido",
+    "chartType": "Tipo de gráfico",
+    "preset_gaming": "🎮 Gaming",
+    "preset_minimal": "📊 Mínimo",
+    "preset_retro": "🕹️ Retro",
+    "preset_cyberpunk": "🌆 Cyberpunk",
+    "chart_ring": "💍 Anel",
+    "chart_wave": "🌊 Gráfico de ondas"
+  }
 }

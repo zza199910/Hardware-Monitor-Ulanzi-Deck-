@@ -16,5 +16,15 @@
     { "Name": "팬 속도", "Tooltip": "팬 속도(RPM) 표시" },
     { "Name": "네트워크 업로드", "Tooltip": "네트워크 업로드 속도 표시" },
     { "Name": "네트워크 다운로드", "Tooltip": "네트워크 다운로드 속도 표시" }
-  ]
+  ],
+  "Localization": {
+    "presetStyle": "프리셋 스타일",
+    "chartType": "차트 유형",
+    "preset_gaming": "🎮 게이밍",
+    "preset_minimal": "📊 미니멀",
+    "preset_retro": "🕹️ 레트로",
+    "preset_cyberpunk": "🌆 사이버펑크",
+    "chart_ring": "💍 링",
+    "chart_wave": "🌊 웨이브 차트"
+  }
 }

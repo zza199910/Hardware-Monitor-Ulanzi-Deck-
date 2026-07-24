@@ -1,4 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">
-  <rect width="72" height="72" fill="#1a1a1a" rx="4"/>
-  <text x="36" y="45" font-family="Arial" font-size="28" fill="#ffffff" text-anchor="middle">N</text>
+  <rect width="72" height="72" fill="#f0f0f0" rx="6"/>
+  <!-- Fan outer ring -->
+  <circle cx="36" cy="36" r="26" fill="none" stroke="#4a90b8" stroke-width="3"/>
+  <!-- Fan hub -->
+  <circle cx="36" cy="36" r="7" fill="#4a90b8"/>
+  <circle cx="36" cy="36" r="3" fill="#2a6080"/>
+  <!-- Fan blade 1 -->
+  <path d="M36,29 Q46,16 52,20 Q48,30 36,29Z" fill="#6bb3d9"/>
+  <!-- Fan blade 2 -->
+  <path d="M42,36 Q55,42 52,50 Q42,45 42,36Z" fill="#6bb3d9"/>
+  <!-- Fan blade 3 -->
+  <path d="M36,43 Q26,56 20,52 Q24,42 36,43Z" fill="#6bb3d9"/>
+  <!-- Fan blade 4 -->
+  <path d="M30,36 Q17,30 20,22 Q30,27 30,36Z" fill="#6bb3d9"/>
+  <!-- Mounting holes -->
+  <circle cx="36" cy="13" r="2.5" fill="#888"/>
+  <circle cx="59" cy="36" r="2.5" fill="#888"/>
+  <circle cx="36" cy="59" r="2.5" fill="#888"/>
+  <circle cx="13" cy="36" r="2.5" fill="#888"/>
 </svg>

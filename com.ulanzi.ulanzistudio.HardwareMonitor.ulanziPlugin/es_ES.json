@@ -16,5 +16,15 @@
     { "Name": "Velocidad Ventilador", "Tooltip": "Mostrar velocidad del ventilador en RPM" },
     { "Name": "Subida de Red", "Tooltip": "Mostrar velocidad de subida de red" },
     { "Name": "Descarga de Red", "Tooltip": "Mostrar velocidad de descarga de red" }
-  ]
+  ],
+  "Localization": {
+    "presetStyle": "Estilo preestablecido",
+    "chartType": "Tipo de gráfico",
+    "preset_gaming": "🎮 Gaming",
+    "preset_minimal": "📊 Mínimo",
+    "preset_retro": "🕹️ Retro",
+    "preset_cyberpunk": "🌆 Cyberpunk",
+    "chart_ring": "💍 Anillo",
+    "chart_wave": "🌊 Gráfico de ondas"
+  }
 }

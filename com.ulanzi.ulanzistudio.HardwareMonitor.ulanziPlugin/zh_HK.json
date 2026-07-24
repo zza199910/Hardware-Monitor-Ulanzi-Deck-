@@ -16,5 +16,15 @@
     { "Name": "風扇轉速", "Tooltip": "顯示風扇轉速（RPM）" },
     { "Name": "網路上傳", "Tooltip": "顯示網路上傳速度" },
     { "Name": "網路下載", "Tooltip": "顯示網路下載速度" }
-  ]
+  ],
+  "Localization": {
+    "presetStyle": "預設風格",
+    "chartType": "圖表類型",
+    "preset_gaming": "🎮 遊戲",
+    "preset_minimal": "📊 簡約",
+    "preset_retro": "🕹️ 復古",
+    "preset_cyberpunk": "🌆 賽博朋克",
+    "chart_ring": "💍 環形",
+    "chart_wave": "🌊 波形圖"
+  }
 }

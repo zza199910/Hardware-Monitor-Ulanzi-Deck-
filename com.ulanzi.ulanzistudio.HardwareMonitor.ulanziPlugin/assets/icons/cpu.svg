@@ -1,4 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">
-  <rect width="72" height="72" fill="#1a1a1a" rx="4"/>
-  <text x="36" y="45" font-family="Arial" font-size="32" fill="#ffffff" text-anchor="middle">C</text>
+  <rect width="72" height="72" fill="#f0f0f0" rx="6"/>
+  <!-- CPU chip body -->
+  <rect x="18" y="18" width="36" height="36" rx="3" fill="#2d8659" stroke="#1a5c3a" stroke-width="1.5"/>
+  <!-- Inner die -->
+  <rect x="24" y="24" width="24" height="24" rx="2" fill="#1a3a28"/>
+  <!-- Pins top -->
+  <rect x="22" y="12" width="4" height="6" rx="0.5" fill="#333"/>
+  <rect x="30" y="12" width="4" height="6" rx="0.5" fill="#333"/>
+  <rect x="38" y="12" width="4" height="6" rx="0.5" fill="#333"/>
+  <!-- Pins bottom -->
+  <rect x="22" y="54" width="4" height="6" rx="0.5" fill="#333"/>
+  <rect x="30" y="54" width="4" height="6" rx="0.5" fill="#333"/>
+  <rect x="38" y="54" width="4" height="6" rx="0.5" fill="#333"/>
+  <!-- Pins left -->
+  <rect x="12" y="22" width="6" height="4" rx="0.5" fill="#333"/>
+  <rect x="12" y="30" width="6" height="4" rx="0.5" fill="#333"/>
+  <rect x="12" y="38" width="6" height="4" rx="0.5" fill="#333"/>
+  <!-- Pins right -->
+  <rect x="54" y="22" width="6" height="4" rx="0.5" fill="#333"/>
+  <rect x="54" y="30" width="6" height="4" rx="0.5" fill="#333"/>
+  <rect x="54" y="38" width="6" height="4" rx="0.5" fill="#333"/>
 </svg>

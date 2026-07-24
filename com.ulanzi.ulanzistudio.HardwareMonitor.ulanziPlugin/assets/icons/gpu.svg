@@ -1,4 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">
-  <rect width="72" height="72" fill="#1a1a1a" rx="4"/>
-  <text x="36" y="45" font-family="Arial" font-size="32" fill="#ffffff" text-anchor="middle">G</text>
+  <rect width="72" height="72" fill="#f0f0f0" rx="6"/>
+  <!-- GPU chip body -->
+  <rect x="14" y="22" width="44" height="28" rx="3" fill="#2d8659" stroke="#1a5c3a" stroke-width="1.5"/>
+  <!-- Die area -->
+  <rect x="20" y="27" width="32" height="18" rx="2" fill="#1a3a28"/>
+  <!-- Heat spreader lines -->
+  <line x1="26" y1="27" x2="26" y2="45" stroke="#3aa376" stroke-width="0.8" opacity="0.5"/>
+  <line x1="36" y1="27" x2="36" y2="45" stroke="#3aa376" stroke-width="0.8" opacity="0.5"/>
+  <line x1="46" y1="27" x2="46" y2="45" stroke="#3aa376" stroke-width="0.8" opacity="0.5"/>
+  <!-- Top pins -->
+  <rect x="20" y="17" width="4" height="5" rx="0.5" fill="#333"/>
+  <rect x="28" y="17" width="4" height="5" rx="0.5" fill="#333"/>
+  <rect x="36" y="17" width="4" height="5" rx="0.5" fill="#333"/>
+  <rect x="44" y="17" width="4" height="5" rx="0.5" fill="#333"/>
+  <!-- Bottom pins (PCB connector) -->
+  <rect x="20" y="50" width="4" height="5" rx="0.5" fill="#333"/>
+  <rect x="28" y="50" width="4" height="5" rx="0.5" fill="#333"/>
+  <rect x="36" y="50" width="4" height="5" rx="0.5" fill="#333"/>
+  <rect x="44" y="50" width="4" height="5" rx="0.5" fill="#333"/>
 </svg>

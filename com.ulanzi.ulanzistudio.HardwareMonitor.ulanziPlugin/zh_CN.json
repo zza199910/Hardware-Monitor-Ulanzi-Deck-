@@ -16,5 +16,15 @@
     { "Name": "风扇转速", "Tooltip": "显示风扇转速（RPM）" },
     { "Name": "网络上传", "Tooltip": "显示网络上传速度" },
     { "Name": "网络下载", "Tooltip": "显示网络下载速度" }
-  ]
+  ],
+  "Localization": {
+    "presetStyle": "预设风格",
+    "chartType": "图表类型",
+    "preset_gaming": "🎮 游戏",
+    "preset_minimal": "📊 简约",
+    "preset_retro": "🕹️ 复古",
+    "preset_cyberpunk": "🌆 赛博朋克",
+    "chart_ring": "💍 环形",
+    "chart_wave": "🌊 波形图"
+  }
 }

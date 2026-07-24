@@ -16,5 +16,15 @@
     { "Name": "Lüfterdrehzahl", "Tooltip": "Lüfterdrehzahl in RPM anzeigen" },
     { "Name": "Netzwerk Upload", "Tooltip": "Netzwerk-Upload-Geschwindigkeit" },
     { "Name": "Netzwerk Download", "Tooltip": "Netzwerk-Download-Geschwindigkeit" }
-  ]
+  ],
+  "Localization": {
+    "presetStyle": "Preset-Stil",
+    "chartType": "Diagrammtyp",
+    "preset_gaming": "🎮 Gaming",
+    "preset_minimal": "📊 Minimal",
+    "preset_retro": "🕹️ Retro",
+    "preset_cyberpunk": "🌆 Cyberpunk",
+    "chart_ring": "💍 Ring",
+    "chart_wave": "🌊 Wellendiagramm"
+  }
 }
