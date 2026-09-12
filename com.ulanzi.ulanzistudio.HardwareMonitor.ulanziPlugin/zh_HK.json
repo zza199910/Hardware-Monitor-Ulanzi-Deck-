@@ -25,6 +25,15 @@
     "preset_retro": "🕹️ 復古",
     "preset_cyberpunk": "🌆 賽博朋克",
     "chart_ring": "💍 環形",
-    "chart_wave": "🌊 波形圖"
+    "chart_wave": "🌊 波形圖",
+    "netLimitLabel": "頻寬上限",
+    "hwLabelCpu": "CPU",
+    "hwLabelGpu": "顯示卡",
+    "hwLabelFan": "風扇",
+    "hwLabelNic": "網絡卡",
+    "hwAuto": "自動",
+    "rangeMaxLabel": "滿量程",
+    "rangeMaxAutoAdaptive": "自動 — 按實測峰值自適應。填寫數值可固定量程（如 TDP 或最高頻率）。",
+    "rangeMaxAutoStatic": "自動 — {d} {u}。填寫數值可覆寫。"
   }
 }

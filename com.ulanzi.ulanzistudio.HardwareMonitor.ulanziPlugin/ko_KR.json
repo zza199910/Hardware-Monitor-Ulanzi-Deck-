@@ -25,6 +25,15 @@
     "preset_retro": "🕹️ 레트로",
     "preset_cyberpunk": "🌆 사이버펑크",
     "chart_ring": "💍 링",
-    "chart_wave": "🌊 웨이브 차트"
+    "chart_wave": "🌊 웨이브 차트",
+    "netLimitLabel": "대역폭 상한",
+    "hwLabelCpu": "CPU",
+    "hwLabelGpu": "GPU",
+    "hwLabelFan": "팬",
+    "hwLabelNic": "네트워크 어댑터",
+    "hwAuto": "자동",
+    "rangeMaxLabel": "최대 범위",
+    "rangeMaxAutoAdaptive": "자동 — 측정된 최대값에 맞춰 조정됩니다. 값을 입력하면 범위가 고정됩니다(예: TDP, 최대 부스트 클럭).",
+    "rangeMaxAutoStatic": "자동 — {d} {u}. 값을 입력하면 재정의됩니다."
   }
 }

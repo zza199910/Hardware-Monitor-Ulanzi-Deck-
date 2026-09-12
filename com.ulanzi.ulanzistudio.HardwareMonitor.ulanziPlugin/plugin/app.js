@@ -9,6 +9,71 @@ const _pendingSettings = {};        // context → 提前到达的 onParamFromAp
 const LHM_URL = 'http://127.0.0.1:8085/data.json';
 const DEBUG = false; // 热路径诊断日志开关：默认关闭，避免每 tick 的 JSON.stringify 开销
 let _selectedGpuId = ''; // 用户在设置页手动选择的 GPU HardwareId（空字符串 = Auto 自动）
+let _selectedCpuId = ''; // 手动选择的 CPU HardwareId（如 /amdcpu/0、/intelcpu/0）；空 = Auto（取首个 CPU）
+let _selectedFanId = ''; // 手动选择的 Fan 传感器 SensorId；空 = Auto（全部风扇取最大值）
+let _selectedNicId = ''; // 手动选择的网卡 HardwareId（如 /nic/0）；空 = Auto（全部网卡累加）
+
+// ── 非百分比控件的"满量程"参数（Auto / 自定义）──────────────────────────
+// 每个 monitorType 对应一个配置键、显示单位与静态默认上限。
+// 0 / 空 = Auto：沿用原有行为（clock/power 走自适应量程，其余用 MONITOR_TYPES 的静态 max）。
+// > 0 = 自定义：直接把 config.max 固定为用户填的数值（如 65W TDP、5000MHz 频率上限）。
+// 百分比类控件（cpu/gpu/ram-percent）不在表内 —— 它们恒以 100% 为满量程，无需配置。
+const SCALE_PARAM = {
+  'cpu-temp':   { key: 'tempMaxC',    unit: '°C',  def: 110  },
+  'gpu-temp':   { key: 'tempMaxC',    unit: '°C',  def: 110  },
+  'cpu-power':  { key: 'powerMaxW',   unit: 'W',   def: 160  },
+  'gpu-power':  { key: 'powerMaxW',   unit: 'W',   def: 500  },
+  'cpu-clock':  { key: 'clockMaxMHz', unit: 'MHz', def: 6000 },
+  'gpu-clock':  { key: 'clockMaxMHz', unit: 'MHz', def: 3000 },
+  'gpu-mem':    { key: 'memMaxGB',    unit: 'GB',  def: 24   },
+  'ram-gb':     { key: 'ramMaxGB',    unit: 'GB',  def: 64   },
+  'fan':        { key: 'fanMaxRPM',   unit: 'RPM', def: 3000 },
+};
+
+// 控件类型 → 需要的硬件选择器种类（无条目 = 该类无需选择，如 RAM / 百分比）
+const HW_SELECT_KIND = {
+  'cpu-temp': 'cpu', 'cpu-percent': 'cpu', 'cpu-power': 'cpu', 'cpu-clock': 'cpu',
+  'gpu-temp': 'gpu', 'gpu-percent': 'gpu', 'gpu-power': 'gpu', 'gpu-clock': 'gpu', 'gpu-mem': 'gpu',
+  'fan': 'fan',
+  'network-up': 'nic', 'network-down': 'nic',
+};
+// 选择器种类 → 配置键名（与 DEFAULT_CONFIG 中的键一一对应）
+const HW_SELECT_KEY = { cpu: 'cpuId', gpu: 'gpuId', fan: 'fanId', nic: 'nicId' };
+// 选择器种类 → 模块级状态读写（四个 let 无法动态索引，故用访问器包一层）
+const HW_SELECT_STATE = {
+  cpu: { get: () => _selectedCpuId, set: (v) => { _selectedCpuId = v; } },
+  gpu: { get: () => _selectedGpuId, set: (v) => { _selectedGpuId = v; } },
+  fan: { get: () => _selectedFanId, set: (v) => { _selectedFanId = v; } },
+  nic: { get: () => _selectedNicId, set: (v) => { _selectedNicId = v; } },
+};
+
+// 把配置里的满量程值规整为"有效正数或 0(自动)"：非数字 / NaN / Infinity / ≤0 一律视为自动
+function toPositiveNumber(v) {
+  const n = (typeof v === 'number') ? v : parseFloat(v);
+  return (typeof n === 'number' && isFinite(n) && n > 0) ? n : 0;
+}
+
+// ── 网络带宽满量程（网络环 100% 对应的上限，单位 B/s）──────────────────────
+// 解析优先级：用户面板显式设置 > LHM 自动探测链路速率 > 兜底。
+//
+// 关于「能否直接从 LHM 读到带宽上限」——结论：不能直接读，但可以反解：
+//   LibreHardwareMonitorLib/Hardware/Network/Network.cs 只创建 5 个传感器：
+//   Data Uploaded / Data Downloaded / Upload Speed / Download Speed / Network Utilization，
+//   【没有】Connection Speed / Link Speed。（Windows.Forms 中 `case "Connection Speed"`
+//   是从 HWiNFO 兼容表继承的死代码，Network 硬件从不产生该传感器；实测 7 张网卡均无此传感器。）
+//   但 Network.cs:90 用链路速率计算利用率：
+//     load% = ((dBytesUp + dBytesDown) * 8 / dt) / NetworkInterface.Speed * 100
+//   而 Upload/Download Speed 是同一 dt 得出的 B/s，故可精确反解：
+//     NetworkInterface.Speed(bps) = (upBps + downBps) * 8 / (util% / 100)
+//   实测本机反解得 998.6~1004.8 Mbps → 吸附到 1000 Mbps（1 Gbps），误差 < 1%。
+// 注意语义差异：反解得到的是【网卡链路速率】（1 Gbps），不是【宽带上限】（如 60 Mbps）。
+// 想按宽带上限画满环，请在属性面板显式填写。0/留空 = 自动。
+const NET_LINK_FALLBACK_BPS = 125e6;   // 无法反解时的兜底：1 Gbps
+const NET_LINK_MIN_UTIL_PCT = 0.5;     // 利用率低于此值：util 仅 1 位小数，反解误差过大 → 丢弃
+const NET_LINK_MAX_UTIL_PCT = 97;      // 利用率接近/触顶说明已被 LHM 钳位，只能得到下界 → 丢弃
+const NET_LINK_SNAP_TOLERANCE = 0.25;  // 反解值吸附到标准链路速率的相对容差
+const NET_LINK_CONFIRM_HITS = 3;       // 连续一致观测达到该次数才切换结果（抗抖动/误判）
+const STANDARD_LINK_MBPS = [10, 100, 1000, 2500, 5000, 10000, 20000, 40000, 100000];
 
 // ═══════════════════════════════════════════════════════
 //  LibreHardwareMonitor JSON 解析（纯 JavaScript，零依赖）
@@ -26,6 +91,26 @@ function parseValue(val) {
 // 兼容数字 RawValue：RawValue 为数字时直接返回，否则回退字符串解析
 function parseRaw(val) {
   return (typeof val === 'number') ? val : parseValue(val);
+}
+
+// LHM 的 Throughput.Value 是"已格式化带单位"的字符串（最小档位为 KB/s，如 "40.0 KB/s"），
+// RawValue 才是真实 B/s（如 "40963.9 B/s"）。当 RawValue 缺失而直接 parseValue("40.0 KB/s") 时
+// 会得到 40 并被当成 40 B/s（少算 1024 倍）→ 显示与环形比例双双失真。此函数按单位还原回 B/s（1024 基）。
+// 无单位后缀时行为与 parseValue 一致（保持向后兼容）。
+function parseThroughputValue(val) {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val !== 'string') return 0;
+  const m = val.match(/^([\d.]+)\s*(k|m|g)?/i);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (!isFinite(n)) return 0;
+  const p = (m[2] || '').toLowerCase();
+  const KB = 1024, MB = 1024 * 1024, GB = 1024 * 1024 * 1024;
+  if (p === 'k') return n * KB;
+  if (p === 'm') return n * MB;
+  if (p === 'g') return n * GB;
+  return n; // B/s（无后缀）
 }
 
 // 网速字节单位自动缩放（与 LHM 一致的 KB/s|MB/s|GB/s，并补 LHM 缺失的 GB/s 档）
@@ -86,6 +171,23 @@ function findHardwareNodeById(root, hwId) {
     if (found) return found;
   }
   return null;
+}
+
+// ── 手动硬件选择解析 ──────────────────────────────────────
+// 语义与 GPU 选择保持一致：指定了就用指定的；指定的 HardwareId 当前不存在（换机/驱动变动）
+// 则回退到自动发现，避免整块面板永久显示 0。
+function resolveCpuNode(root, selectedCpuId) {
+  if (selectedCpuId) {
+    const byId = findHardwareNodeById(root, selectedCpuId);
+    if (byId) return byId;
+  }
+  return findHardwareNode(root, '/amdcpu/') || findHardwareNode(root, '/intelcpu/');
+}
+
+// 风扇选择：Auto = 返回全部（调用方取最大值）；指定 = 仅该 SensorId（不存在则回退全部）
+function applyFanSelection(sensorIds, selectedFanId) {
+  if (!selectedFanId) return sensorIds;
+  return sensorIds.indexOf(selectedFanId) >= 0 ? [selectedFanId] : sensorIds;
 }
 
 function walkSensors(node, callback) {
@@ -163,7 +265,7 @@ function parseLHMJson(root, selectedGpuId) {
   if (!root || !root.Children) return result;
 
   // ── CPU ───────────────────────────────────────────────
-  const cpuNode = findHardwareNode(root, '/amdcpu/') || findHardwareNode(root, '/intelcpu/');
+  const cpuNode = resolveCpuNode(root, _selectedCpuId);
   if (cpuNode) {
     const tempSensors  = collectSensors(cpuNode, 'Temperature');
     const loadSensors  = collectSensors(cpuNode, 'Load');
@@ -299,7 +401,13 @@ function parseLHMJson(root, selectedGpuId) {
   collectFanNodes(root);
 
   if (fanSensors.length > 0) {
-    const rpms = fanSensors.map(s => parseValue(s.Value)).filter(r => r > 0);
+    // 手动选择单个风扇时只读该传感器；Auto 时读全部并取最大值
+    const chosenIds = applyFanSelection(fanSensors.map(s => s.SensorId).filter(Boolean), _selectedFanId);
+    const chosenSet = new Set(chosenIds);
+    const rpms = fanSensors
+      .filter(s => chosenSet.has(s.SensorId))
+      .map(s => parseValue(s.Value))
+      .filter(r => r > 0);
     if (rpms.length > 0) {
       result.fan.rpm = Math.max(...rpms);
     }
@@ -314,7 +422,8 @@ function parseLHMJson(root, selectedGpuId) {
 
 // 解析 Connection Speed 字符串（如 "1 Gbit/s" / "1000 Mbps" / "100 Mbit/s"）→ 字节 B/s
 function parseLinkSpeedToBytes(str) {
-  const s = (typeof str === 'string') ? str : String(str == null ? '' : str);
+  // 去掉千位分隔符（如 "1,000 Mbps"）：否则正则只吃到 "1" → 满量程被算成 0.125 B/s → 环形恒满
+  const s = ((typeof str === 'string') ? str : String(str == null ? '' : str)).replace(/,/g, '');
   const m = s.match(/([\d.]+)\s*(k|m|g)?/i);
   if (!m) return 0;
   const num = parseFloat(m[1]);
@@ -348,35 +457,146 @@ function getNicConnectionSpeedBytes(nicNode) {
   return parseLinkSpeedToBytes(cs.Value);
 }
 
-// LHM NIC Throughput 求和（所有网卡上行/下行 Throughput 累加）
-function extractNetworkFromLHM(root) {
+// ── 由 Network Utilization 反解 NIC 链路速率 ──────────────────────────────
+// 背景见文件顶部常量区注释：LHM 不暴露 NetworkInterface.Speed，但利用率公式可反解。
+
+// 从 SensorId 提取 NIC 归属键：'/nic/{GUID}/throughput/7' → '/nic/%7bguid%7d'
+function nicKeyOf(sensorId) {
+  const m = String(sensorId || '').match(/^\/nic\/[^/]+/i);
+  return m ? m[0].toLowerCase() : null;
+}
+
+// 松散数值解析（RawValue 可能是 '86090.3 B/s' 这类带单位字符串）
+function parseNumericLoose(val) {
+  if (typeof val === 'number') return val;
+  const m = String(val == null ? '' : val).replace(/,/g, '').match(/-?[\d.]+/);
+  return m ? parseFloat(m[0]) : NaN;
+}
+
+// 吸附到标准链路速率（1 Gbps 这类整数档最有价值）；超出容差则原样返回（如 Wi-Fi 协商速率）
+function snapToStandardLinkBps(bps) {
+  if (!(bps > 0)) return 0;
+  let best = 0, bestErr = Infinity;
+  for (let i = 0; i < STANDARD_LINK_MBPS.length; i++) {
+    const cand = STANDARD_LINK_MBPS[i] * 1e6;
+    const err = Math.abs(cand - bps) / cand;
+    if (err < bestErr) { bestErr = err; best = cand; }
+  }
+  return (bestErr <= NET_LINK_SNAP_TOLERANCE) ? best : bps;
+}
+
+// 遍历 LHM 原始 JSON，逐 NIC 反解链路速率，取所有 NIC 中最大者（B/s）；0 = 本次无法反解
+// 逐 NIC 配对是必须的：up/down/util 必须来自同一张网卡，跨网卡组合会算出无意义的数值。
+function inferLinkSpeedFromReport(root) {
+  if (!root || !root.Children) return 0;
+  const byNic = new Map();
+
+  (function walk(node) {
+    if (!node || !node.Children) return;
+    for (const child of node.Children) {
+      const key = nicKeyOf(child.HardwareId);
+      if (key) {
+        const rec = { up: 0, down: 0, util: 0, hasUtil: false };
+        (function collect(n) {
+          if (!n || !n.Children) return;
+          for (const s of n.Children) {
+            const sid = String(s.SensorId || '').toLowerCase();
+            if (sid.endsWith('/throughput/7')) {
+              rec.up += (s.RawValue !== null && s.RawValue !== undefined) ? parseNumericLoose(s.RawValue) : parseThroughputValue(s.Value);
+            } else if (sid.endsWith('/throughput/8')) {
+              rec.down += (s.RawValue !== null && s.RawValue !== undefined) ? parseNumericLoose(s.RawValue) : parseThroughputValue(s.Value);
+            } else if (sid.endsWith('/load/1')) {
+              rec.util = parseNumericLoose(s.Value); rec.hasUtil = true;
+            }
+            collect(s);
+          }
+        })(child);
+        byNic.set(key, rec);
+      }
+      walk(child);
+    }
+  })(root);
+
+  let maxBpsBits = 0;
+  for (const rec of byNic.values()) {
+    if (!rec.hasUtil) continue;
+    if (rec.util < NET_LINK_MIN_UTIL_PCT || rec.util > NET_LINK_MAX_UTIL_PCT) continue;
+    const bits = (rec.up + rec.down) * 8;
+    if (!isFinite(bits) || bits <= 0) continue;
+    const link = snapToStandardLinkBps(bits / (rec.util / 100));
+    if (link > maxBpsBits) maxBpsBits = link;
+  }
+  // 内部按 bit/s 计算（标准档位表是 Mbps），返回前 ÷8 统一为 B/s，与 graphMaxBps / connectionSpeed 字段口径一致
+  return maxBpsBits / 8;
+}
+
+// 链路速率观测状态（机器级属性，与具体 action 无关，故用模块级状态）
+const _linkObs = { locked: 0, candidate: 0, hits: 0 };
+
+// 投入一次观测（B/s，0 = 本次无效），返回当前锁定的链路速率（B/s，0 = 尚未锁定）。
+// 需要连续 NET_LINK_CONFIRM_HITS 次一致才切换：单次反解仍受 util 一位小数影响，不能直接采信。
+function observeLinkSpeed(observedBps) {
+  if (!(observedBps > 0)) return _linkObs.locked;           // 空闲样本不参与，也不清空已有结论
+  if (observedBps === _linkObs.locked) { _linkObs.candidate = 0; _linkObs.hits = 0; return _linkObs.locked; }
+  if (observedBps === _linkObs.candidate) _linkObs.hits++;
+  else { _linkObs.candidate = observedBps; _linkObs.hits = 1; }
+  if (_linkObs.hits >= NET_LINK_CONFIRM_HITS) {
+    _linkObs.locked = observedBps;
+    _linkObs.candidate = 0; _linkObs.hits = 0;
+  }
+  return _linkObs.locked;
+}
+
+// 网络环满量程解析 → { bps, source }
+//   source: 'user' 用户面板指定 | 'link-sensor' LHM 直供 | 'link-inferred' Utilization 反解 | 'fallback' 兜底
+function resolveNetMaxBps(config, monitorType, sensorBps, inferredBps) {
+  const key = (monitorType === 'network-up') ? 'netMaxUpMbps' : 'netMaxDownMbps';
+  const userMbps = parseFloat(config ? config[key] : NaN);
+  if (isFinite(userMbps) && userMbps > 0) return { bps: userMbps * 1e6 / 8, source: 'user' };
+  if (sensorBps > 0) return { bps: sensorBps, source: 'link-sensor' };
+  if (inferredBps > 0) return { bps: inferredBps, source: 'link-inferred' };
+  return { bps: NET_LINK_FALLBACK_BPS, source: 'fallback' };
+}
+
+// ── 网卡节点收集与选择 ────────────────────────────────────
+// 收集所有 NIC 节点（HardwareId 含 /nic/，如 /nic/0、/nic/1）
+function collectNicNodes(node, out) {
+  if (!node || !node.Children) return;
+  for (const child of node.Children) {
+    if ((child.HardwareId || '').toLowerCase().includes('/nic/')) out.push(child);
+    collectNicNodes(child, out);
+  }
+}
+// 网卡选择：Auto（空）= 全部；指定且存在 = 仅该张；指定但当前不存在 = 回退全部（避免永久 0）
+function selectNicNodes(nicNodes, selectedNicId) {
+  if (!selectedNicId) return nicNodes;
+  const hit = nicNodes.filter(n => n.HardwareId === selectedNicId);
+  return hit.length > 0 ? hit : nicNodes;
+}
+
+// LHM NIC Throughput 求和（Auto = 所有网卡上行/下行 Throughput 累加；指定网卡 = 仅该张）
+function extractNetworkFromLHM(root, selectedNicId) {
   if (!root || !root.Children) return { up: 0, down: 0, upUnit: 'MB/s', downUnit: 'MB/s', connectionSpeed: 0 };
   let totalUp = 0, totalDown = 0, linkSpeedBytes = 0;
 
-  function walkNic(node) {
-    if (!node || !node.Children) return;
-    for (const child of node.Children) {
-      const hwId = (child.HardwareId || '').toLowerCase();
-      if (hwId.includes('/nic/')) {
-        const tpSensors = collectSensors(child, 'Throughput');
-        for (const s of tpSensors) {
-          const sid = (s.SensorId || '').toLowerCase();
-          // 优先用 RawValue（LHM 输出的真实 B/s 数字），缺失时回退解析 Value 字符串
-          const val = (s.RawValue !== null && s.RawValue !== undefined)
-            ? parseRaw(s.RawValue)
-            : parseValue(s.Value);
-          if (sid.endsWith('/throughput/7')) totalUp += val;
-          if (sid.endsWith('/throughput/8')) totalDown += val;
-        }
-        // 同 NIC 节点的链路速率（Connection Speed 或 Link Speed，bit 单位）→ 字节 B/s；
-        // 取所有 NIC 中的【最大】链路速率作为网络 chart 真满量程（多网卡累加成错，见 BugFix 说明）
-        const _cs = getNicConnectionSpeedBytes(child);
-        if (_cs > linkSpeedBytes) linkSpeedBytes = _cs;
-      }
-      walkNic(child);
+  const nicNodes = [];
+  collectNicNodes(root, nicNodes);
+  for (const nic of selectNicNodes(nicNodes, selectedNicId)) {
+    const tpSensors = collectSensors(nic, 'Throughput');
+    for (const s of tpSensors) {
+      const sid = (s.SensorId || '').toLowerCase();
+      // 优先用 RawValue（LHM 输出的真实 B/s 数字），缺失时回退解析 Value 字符串（按单位还原 B/s）
+      const val = (s.RawValue !== null && s.RawValue !== undefined)
+        ? parseRaw(s.RawValue)
+        : parseThroughputValue(s.Value);
+      if (sid.endsWith('/throughput/7')) totalUp += val;
+      if (sid.endsWith('/throughput/8')) totalDown += val;
     }
+    // 同 NIC 节点的链路速率（Connection Speed 或 Link Speed，bit 单位）→ 字节 B/s；
+    // 取选中网卡中的【最大】链路速率作为网络 chart 真满量程（多网卡累加成错，见 BugFix 说明）
+    const _cs = getNicConnectionSpeedBytes(nic);
+    if (_cs > linkSpeedBytes) linkSpeedBytes = _cs;
   }
-  walkNic(root);
 
   // 以 B/s 累加后统一按字节单位缩放，避免二次换算丢精度
   const up = formatThroughput(totalUp);
@@ -386,7 +606,7 @@ function extractNetworkFromLHM(root) {
     down: down.value,
     upUnit: up.unit,
     downUnit: down.unit,
-    connectionSpeed: linkSpeedBytes,  // 当前所有 NIC 链路速率之和（字节 B/s）
+    connectionSpeed: linkSpeedBytes,  // 选中 NIC 的链路速率（字节 B/s）
   };
 }
 
@@ -459,23 +679,21 @@ function findGpuNode(root) {
   }
   return null;
 }
-// 收集 NIC throughput 的 up/down SensorId（对应 extractNetworkFromLHM 的 walkNic）
-function collectNicThroughput(root, upOut, downOut, linkOut) {
+// 收集 NIC throughput 的 up/down SensorId（选取语义与 extractNetworkFromLHM 保持一致）
+function collectNicThroughput(root, upOut, downOut, linkOut, selectedNicId) {
   if (!root || !root.Children) return;
-  for (const child of root.Children) {
-    const hwId = (child.HardwareId || '').toLowerCase();
-    if (hwId.includes('/nic/')) {
-      const tpSensors = collectSensors(child, 'Throughput');
-      for (const s of tpSensors) {
-        const sid = (s.SensorId || '').toLowerCase();
-        if (sid.endsWith('/throughput/7')) upOut.push(s.SensorId);
-        if (sid.endsWith('/throughput/8')) downOut.push(s.SensorId);
-      }
-      // 同 NIC 节点的 Connection Speed 传感器（链路速率），用于网络真满量程（与慢路径 100% 一致）
-      const cs = findConnectionSpeedSensor(child);
-      if (cs && cs.SensorId) linkOut.push(cs.SensorId);
+  const nicNodes = [];
+  collectNicNodes(root, nicNodes);
+  for (const nic of selectNicNodes(nicNodes, selectedNicId)) {
+    const tpSensors = collectSensors(nic, 'Throughput');
+    for (const s of tpSensors) {
+      const sid = (s.SensorId || '').toLowerCase();
+      if (sid.endsWith('/throughput/7')) upOut.push(s.SensorId);
+      if (sid.endsWith('/throughput/8')) downOut.push(s.SensorId);
     }
-    collectNicThroughput(child, upOut, downOut, linkOut);
+    // 同 NIC 节点的 Connection Speed 传感器（链路速率），用于网络真满量程（与慢路径 100% 一致）
+    const cs = findConnectionSpeedSensor(nic);
+    if (cs && cs.SensorId) linkOut.push(cs.SensorId);
   }
 }
 
@@ -530,7 +748,7 @@ function discoverRoleIds(raw, selectedGpuId) {
   if (!raw || !raw.Children) return roleIds;
 
   // ── CPU ──
-  const cpuNode = findHardwareNode(raw, '/amdcpu/') || findHardwareNode(raw, '/intelcpu/');
+  const cpuNode = resolveCpuNode(raw, _selectedCpuId);
   if (cpuNode) {
     const tempSensors  = collectSensors(cpuNode, 'Temperature');
     const loadSensors  = collectSensors(cpuNode, 'Load');
@@ -631,11 +849,15 @@ function discoverRoleIds(raw, selectedGpuId) {
   // ── 风扇 ──
   const fanSensors = [];
   collectAllFanSensors(raw, fanSensors);
-  roleIds.fan = fanSensors.map((s) => s.SensorId).filter(Boolean);
+  // 手动选择单个风扇时只记录该 SensorId；Auto 时记录全部（readFastPath 取最大值）
+  roleIds.fan = applyFanSelection(
+    fanSensors.map((s) => s.SensorId).filter(Boolean),
+    _selectedFanId
+  );
 
   // ── 网络 ──
   const netUp = [], netDown = [], netLink = [];
-  collectNicThroughput(raw, netUp, netDown, netLink);
+  collectNicThroughput(raw, netUp, netDown, netLink, _selectedNicId);
   roleIds.network.up = netUp;
   roleIds.network.down = netDown;
   roleIds.network.linkSpeed = netLink;
@@ -706,15 +928,15 @@ function readFastPath(index, roleIds) {
     if (rpms.length > 0) result.fan.rpm = Math.max(...rpms);
   }
 
-  // 网络：up/down 各自累加（优先 RawValue 真实 B/s，回退 Value 字符串）
+  // 网络：up/down 各自累加（优先 RawValue 真实 B/s，回退 Value 字符串并按单位还原）
   let totalUp = 0, totalDown = 0;
   for (const sid of (roleIds.network.up || [])) {
     const n = index.get(sid);
-    if (n) totalUp += (n.RawValue !== null && n.RawValue !== undefined) ? parseRaw(n.RawValue) : parseValue(n.Value);
+    if (n) totalUp += (n.RawValue !== null && n.RawValue !== undefined) ? parseRaw(n.RawValue) : parseThroughputValue(n.Value);
   }
   for (const sid of (roleIds.network.down || [])) {
     const n = index.get(sid);
-    if (n) totalDown += (n.RawValue !== null && n.RawValue !== undefined) ? parseRaw(n.RawValue) : parseValue(n.Value);
+    if (n) totalDown += (n.RawValue !== null && n.RawValue !== undefined) ? parseRaw(n.RawValue) : parseThroughputValue(n.Value);
   }
   // 以 B/s 累加后统一按字节单位缩放，避免二次换算丢精度
   const netUp = formatThroughput(totalUp);
@@ -753,12 +975,27 @@ function resolveLHM(raw, settings) {
     _sensorIndex = newIndex;           // 拓扑稳定：仍用当前索引，数值变化即时可见
   }
   const fast = readFastPath(_sensorIndex, _roleIds);
+  let data;
   if (!fast) {
     const parsed = parseLHMJson(raw, selectedGpuId);
     _roleIds = discoverRoleIds(raw, selectedGpuId);
-    return { ...parsed, network: extractNetworkFromLHM(raw) };
+    data = { ...parsed, network: extractNetworkFromLHM(raw, _selectedNicId) };
+  } else {
+    data = fast;
   }
-  return fast;
+  // 附加链路速率：两条路径（快/慢）都经此处，保证语义一致
+  return attachNetworkLinkSpeed(data, raw);
+}
+
+// 把链路速率（B/s）挂到 network 上，供 _handleData 解析网络环满量程。
+// LHM 无 Connection Speed 传感器，故由 Utilization 反解；需多帧一致才锁定（见 observeLinkSpeed）。
+function attachNetworkLinkSpeed(data, raw) {
+  const inferred = observeLinkSpeed(inferLinkSpeedFromReport(raw));
+  data.network = Object.assign({}, data.network, {
+    linkSpeedBps: inferred,                                  // 反解锁定后的链路速率（B/s），0 = 未知
+    linkSpeedSource: inferred > 0 ? 'util-inference' : 'none',
+  });
+  return data;
 }
 
 // ========= 全局数据管道（发布-订阅 + Promise 去重）=========
@@ -848,6 +1085,20 @@ const DEFAULT_CONFIG = {
   chartStyle: 'ring',          // 图表样式: 'ring' | 'wave'
   showHistory: true,           // 是否显示历史曲线
   enableSharpen: false,        // 是否启用图标锐化（默认关闭，省去每 tick 的卷积计算）
+
+  // ── 手动硬件选择（空字符串 = Auto，由插件自动挑一个）──
+  cpuId: '',                   // CPU HardwareId（如 /amdcpu/0、/intelcpu/0）
+  gpuId: '',                   // GPU HardwareId（多显卡场景指定用哪张）
+  fanId: '',                   // Fan 传感器 SensorId（多个风扇时指定读哪一个）
+  nicId: '',                   // 网卡 HardwareId（如 /nic/0；Auto = 所有网卡累加）
+
+  // ── 非百分比控件的满量程（0 = Auto 自动；> 0 = 自定义固定量程，单位见 SCALE_PARAM）──
+  tempMaxC: 0,                 // 温度满量程 °C
+  powerMaxW: 0,                // 功耗 / TDP 满量程 W
+  clockMaxMHz: 0,              // 频率满量程 MHz
+  memMaxGB: 0,                 // 显存满量程 GB
+  ramMaxGB: 0,                 // 内存满量程 GB
+  fanMaxRPM: 0,                // 风扇转速满量程 RPM
 };
 
 // 监视类型定义（完整对齐 System Vitals）
@@ -1216,6 +1467,11 @@ function drawIcon(config, value, extraText, history) {
     showTitleOnIcon = true,
   } = config;
 
+  // 网络类型判定：以 category 为准（category 不依赖 config.monitorType，天然免疫该类覆盖问题），
+  // monitorType 仅作辅助，双保险防止"KB 以下环形拉满"回归。
+  const isNetwork = (category === 'network') ||
+    (monitorType === 'network-up' || monitorType === 'network-down');
+
   const canvas = createCanvas();
   const ctx = canvas.getContext('2d');
 
@@ -1232,7 +1488,7 @@ function drawIcon(config, value, extraText, history) {
     if (showProgress && max > min) {
       const cx = 72, cy = 68, r = 54;
       let ratio;
-      if (monitorType === 'network-up' || monitorType === 'network-down') {
+      if (isNetwork) {
         // 图形以 B/s 基准归一化；graphMaxBps 在 _handleData 中恒 > 0（未知链路回退 1Gbps）
         const gv = config.graphValueBps || 0, gm = config.graphMaxBps || 1;
         ratio = Math.max(0, Math.min(1, gm > 0 ? gv / gm : 0));
@@ -1243,7 +1499,7 @@ function drawIcon(config, value, extraText, history) {
     }
   } else if (chartStyle === 'wave') {
     // 曲线图 — 对 network/diskIO 根据历史数据动态调整 max
-    const isNet = (monitorType === 'network-up' || monitorType === 'network-down');
+    const isNet = isNetwork;
     const chartMax = getChartMax(config, history, isNet ? (config.graphValueBps || 0) : value, min, isNet ? (config.graphMaxBps || max) : max);
     drawWaveChart(ctx, history || [value], { valueColor, min, max: chartMax });
   }
@@ -1315,7 +1571,7 @@ function drawIcon(config, value, extraText, history) {
     }
 
     // 波形图，Y 范围下移以避开顶部文字
-    const isNet = (monitorType === 'network-up' || monitorType === 'network-down');
+    const isNet = isNetwork;
     const chartMax = getChartMax(config, history, isNet ? (config.graphValueBps || 0) : value, min, isNet ? (config.graphMaxBps || max) : max);
     drawWaveChart(ctx, history || [value], { valueColor, min, max: chartMax });
   }
@@ -1479,7 +1735,11 @@ class SystemVitalsAction {
   constructor(context, monitorType) {
     this.context = context;
     this.monitorType = monitorType || 'cpu-temp';
-    this.config = { ...DEFAULT_CONFIG, ...MONITOR_TYPES[this.monitorType] };
+    // 【根因修复】DEFAULT_CONFIG.monitorType='cpu-temp'，而 MONITOR_TYPES 各项不含 monitorType，
+    // 展开后 config.monitorType 会被覆盖成 'cpu-temp' → drawIcon 走非网络分支，用 (value-min)/(max-min)
+    // 即 (B/s 数字)/100 算比例；网速 < 1KB/s 时单位是 B/s、数值可达数百 → 比例必被钳到 1（环形拉满）。
+    // 显式把 monitorType 写回 config，保证 drawIcon 走网络分支（graphValueBps/graphMaxBps）。
+    this.config = { ...DEFAULT_CONFIG, ...MONITOR_TYPES[this.monitorType], monitorType: this.monitorType };
 
     // 历史数据（用于曲线图）
     this.history = [];
@@ -1508,6 +1768,7 @@ class SystemVitalsAction {
 
       let value = 0;
       let extraText = '';
+      let ramTotalGB = 0;   // ram-gb 的动态总量，供下方统一的量程计算使用
 
       // 根据字段路径读取值
       if (typeInfo.field.startsWith('cpu.')) {
@@ -1519,9 +1780,9 @@ class SystemVitalsAction {
         }
       } else if (typeInfo.field.startsWith('memory.')) {
         value = getDataByField(data, typeInfo.field);
-        // ram-gb 动态设置 max
+        // ram-gb 动态总量：这里只记录，不直接写 config.max（统一交给下方"自动量程"一处写）
         if (this.monitorType === 'ram-gb' && data.memory && data.memory.total > 0) {
-          this.config.max = Math.ceil(data.memory.total);
+          ramTotalGB = Math.ceil(data.memory.total);
         }
       } else if (typeInfo.field.startsWith('fan.')) {
         value = getDataByField(data, 'fan.rpm');
@@ -1537,13 +1798,17 @@ class SystemVitalsAction {
         }
         // 图形渲染统一以字节/秒(B/s)为基准，规避"显示数字 vs max 单位不一致"导致的
         // 低速顶满 / 单位跳变问题。显示数值与单位保持不变（formatValue 仍用缩放后的 value + config.unit）。
-        const csBytes = (data.network && data.network.connectionSpeed) || 0;
+        const csBytes = (data.network && data.network.connectionSpeed) || 0;   // LHM 直供（当前版本不提供该传感器，恒 0）
+        const inferredBps = (data.network && data.network.linkSpeedBps) || 0;  // 由 Network Utilization 反解
         const graphValueBps = unitToBytes(value, this.config.unit);
-        let graphMaxBps = this.config.graphMaxBps || 0;
-        if (csBytes > 0) graphMaxBps = csBytes;        // Connection Speed 真满量程（字节 B/s）
-        else if (graphMaxBps <= 0) graphMaxBps = 125e6; // 未知链路速率时保守按 1 Gbps 兜底
+        // 满量程解析：用户面板指定 > LHM 链路速率 > 1Gbps 兜底。
+        // 不再硬编码 7M/60M —— 那两个数是"宽带上限"，与"网卡链路速率"语义不同，改由用户按需覆盖。
+        const nm = resolveNetMaxBps(this.config, this.monitorType, csBytes, inferredBps);
         this.config.graphValueBps = graphValueBps;
-        this.config.graphMaxBps = graphMaxBps;
+        this.config.graphMaxBps = nm.bps;
+        this.config.netLimitSource = nm.source;
+        this.config.netAutoBps = (csBytes > 0) ? csBytes : inferredBps;  // 自动探测值（不含用户覆盖），供面板展示
+        this._pushNetLinkInfo();
       } else if (typeInfo.field.startsWith('diskUsage.')) {
         const idx = parseInt(typeInfo.field.split('.')[1]) || 0;
         const diskUsage = data.diskUsage;
@@ -1553,12 +1818,28 @@ class SystemVitalsAction {
         }
       }
 
-      // 自适应量程（clock/power）：更新 per-metric 观测峰值并写入 config.max，
-      // ring/wave 共用；公式 max = min(max(observedPeak*1.1, 冷启地板, staticFloor), 硬顶)。
+      // ── 量程：每帧先重算「自动量程」并写回 config.max，再叠加「自定义覆盖」──
+      // 【关键】自动量程必须每帧重算，不能只在实例构造时算一次。否则用户填过自定义值后
+      // 再清空（回到 Auto）时，config.max 会残留上一次的自定义值 —— 静态默认类
+      // （cpu-temp / gpu-temp / gpu-mem / fan）没有别的重算路径，表现为"填了数字就回不到 Auto"。
+      // 自适应公式 max = min(max(observedPeak*1.1, 冷启地板, staticFloor), 硬顶)；
       // 严禁使用 LHM 传感器的 Min/Max 字段（运行时极值，冷启≈0）。
+      let autoMax = typeInfo.max;                                        // 静态默认（MONITOR_TYPES）
+      if (this.monitorType === 'ram-gb' && ramTotalGB > 0) {
+        autoMax = ramTotalGB;                                            // 内存动态总量
+      }
       if (isAdaptiveMetric(this.monitorType)) {
         updateObservedPeak(this.monitorType, value);
-        this.config.max = getAdaptiveMax(this.monitorType, typeInfo.max);
+        autoMax = getAdaptiveMax(this.monitorType, typeInfo.max);         // 时钟 / 功耗观测峰值自适应
+      }
+      this.config.max = autoMax;
+
+      // 满量程覆盖：面板填了自定义值则量程固定（TDP / 频率上限 / 温度 / 显存 / 内存 / 转速）。
+      // 0 / 空 = Auto，直接沿用上面每帧重算出的自动量程 —— 因此清空后能立刻回到 Auto。
+      const scale = SCALE_PARAM[this.monitorType];
+      if (scale) {
+        const customMax = toPositiveNumber(this.config[scale.key]);
+        if (customMax > 0) this.config.max = customMax;
       }
 
       // 保存最新数值
@@ -1618,6 +1899,27 @@ class SystemVitalsAction {
     this._lastIcon = icon;
     const bottomText = this.config.title || typeInfo.title || '';
     $UD.setBaseDataIcon(this.context, icon, bottomText);
+  }
+
+  // 把「当前生效的带宽上限」「自动探测到的链路速率」「取值来源」推给属性面板。
+  // 面板打开后可立即看到自动探测结果，便于判断是否需要手动覆盖。仅在取值变化时推送。
+  _pushNetLinkInfo() {
+    const info = MONITOR_TYPES[this.monitorType];
+    if (!info || info.category !== 'network') return;
+    if (typeof $UD.sendToPropertyInspector !== 'function') return;
+    const effBps = this.config.graphMaxBps || 0;
+    const autoBps = this.config.netAutoBps || 0;
+    const source = this.config.netLimitSource || 'fallback';
+    const sig = effBps + '|' + autoBps + '|' + source;
+    if (sig === this._lastNetPushSig) return;
+    this._lastNetPushSig = sig;
+    const toMbps = (v) => (v > 0 ? Math.round((v * 8 / 1e6) * 10) / 10 : 0);
+    $UD.sendToPropertyInspector({
+      type: 'netlink-info',
+      effectiveMbps: toMbps(effBps),   // 实际用于归一化的上限
+      detectedMbps: toMbps(autoBps),   // 自动探测（LHM 反解）；0 = 尚未探测到
+      source: source,                  // user | link-sensor | link-inferred | fallback
+    }, this.context);
   }
 
   destroy() {
@@ -1749,13 +2051,17 @@ function applySettings(inst, settings) {
 
   const oldChartStyle = inst.config.chartStyle;
 
-  // 多 GPU：保存手动选择的 GPU HardwareId，变化即强制重建角色索引
-  if (settings.gpuId !== undefined) {
-    const newGpuId = settings.gpuId || '';
-    if (newGpuId !== _selectedGpuId) {
-      _selectedGpuId = newGpuId;
-      _roleIds = null; // GPU 选择变化，下次 resolveLHM 必重建，立即生效
-    }
+  // 手动硬件选择（CPU / GPU / 风扇 / 网卡）：任一变化即失效角色索引，
+  // 下一次 resolveLHM 强制重建，选择立即生效（无需等 SENSOR_TTL 到期）。
+  for (const kind of Object.keys(HW_SELECT_KEY)) {
+    const cfgKey = HW_SELECT_KEY[kind];
+    if (settings[cfgKey] === undefined) continue;
+    const next = settings[cfgKey] || '';
+    const state = HW_SELECT_STATE[kind];
+    if (next === state.get()) continue;
+    state.set(next);
+    _roleIds = null;
+    console.log(`[HardwareMonitor] 硬件选择变化 ${cfgKey}: "${next || 'Auto'}"，已失效角色索引`);
   }
 
   // 现有 settings 合并逻辑
@@ -1785,6 +2091,10 @@ function applySettings(inst, settings) {
   if (typeInfo) {
     inst.config.title = typeInfo.title;
   }
+
+  // 回归防护：monitorType 决定 drawIcon 的渲染分支（网络环用 graphValueBps/graphMaxBps 归一化），
+  // 不允许被外部 settings/presetParams 覆盖，否则会退回 (value-min)/(max-min) 导致低速环满。
+  inst.config.monitorType = inst.monitorType;
 
   console.log('[HardwareMonitor] 收到设置更新:', settings, 'for monitorType:', inst.monitorType);
 
@@ -1820,12 +2130,21 @@ $UD.onParamFromApp((jsn) => {
   }
 });
 
-$UD.onWillAppear((jsn) => {
+// 事件注册安全包装：本插件随包的 libs/js/ulanziApi.js 并未实现 onWillAppear / onWillDisappear，
+// 直接调用会抛 TypeError 并【中断其后所有注册】——曾导致 onDidReceiveSettings 从未生效。
+// 存在才注册、缺失则跳过，保证后续注册不被阻塞（模拟器与实机均验证无报错）。
+function safeRegisterEvent(name, fn) {
+  if (typeof $UD[name] === 'function') { $UD[name](fn); return true; }
+  console.warn(`[HardwareMonitor] 当前 SDK 未提供 ${name}，已跳过该事件注册`);
+  return false;
+}
+
+safeRegisterEvent('onWillAppear', (jsn) => {
   const inst = ACTION_CACHE[jsn.context];
   if (inst) inst.updateDisplay();
 });
 
-$UD.onWillDisappear((jsn) => {
+safeRegisterEvent('onWillDisappear', (jsn) => {
   const inst = ACTION_CACHE[jsn.context];
   if (inst) {
     inst.destroy();
@@ -1837,6 +2156,18 @@ $UD.onWillDisappear((jsn) => {
 $UD.onDidReceiveSettings((jsn) => {
   if (jsn && jsn.settings) {
     onSetSettings({ context: jsn.context, param: jsn.settings });
+  }
+});
+
+// 属性面板每次打开都会主动询问带宽上限：面板与插件启动时机不同步，
+// 只靠"取值变化时推送"会漏掉（面板打开时值早已稳定，不会再变化）。
+safeRegisterEvent('onSendToPlugin', (jsn) => {
+  const payload = jsn && jsn.payload;
+  if (!payload || payload.type !== 'netlink-query') return;
+  const inst = jsn.context ? ACTION_CACHE[jsn.context] : null;
+  if (inst) {
+    inst._lastNetPushSig = '';   // 清掉去重标记，强制重推
+    inst._pushNetLinkInfo();
   }
 });
 

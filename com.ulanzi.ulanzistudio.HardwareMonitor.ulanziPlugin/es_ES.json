@@ -25,6 +25,15 @@
     "preset_retro": "🕹️ Retro",
     "preset_cyberpunk": "🌆 Cyberpunk",
     "chart_ring": "💍 Anillo",
-    "chart_wave": "🌊 Gráfico de ondas"
+    "chart_wave": "🌊 Gráfico de ondas",
+    "netLimitLabel": "Límite de ancho de banda",
+    "hwLabelCpu": "CPU",
+    "hwLabelGpu": "GPU",
+    "hwLabelFan": "Ventilador",
+    "hwLabelNic": "Adaptador de red",
+    "hwAuto": "Automático",
+    "rangeMaxLabel": "Rango máximo",
+    "rangeMaxAutoAdaptive": "Automático — se ajusta al pico observado. Introduce un valor para fijar el rango (p. ej. TDP o frecuencia máxima).",
+    "rangeMaxAutoStatic": "Automático — {d} {u}. Introduce un valor para sobrescribir."
   }
 }

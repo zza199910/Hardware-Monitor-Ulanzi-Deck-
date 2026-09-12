@@ -18,13 +18,17 @@
       font-weight: 500;
       src: url('../../libs/fonts/Rajdhani-Medium.ttf');
     }
+    /* 数值型设置项（满量程 / 带宽上限）：数字输入框 + 单位后缀同行显示 */
+    .uspi-scale { display: flex; align-items: center; gap: 6px; }
+    .uspi-scale input { flex: 1 1 auto; min-width: 0; }
+    .uspi-scale-unit { flex: 0 0 auto; opacity: .72; font-size: 12px; white-space: nowrap; }
   </style>
 </head>
 <body>
   <div class="uspi-wrapper hidden">
     <form id="property-inspector">
 
-      <!-- Preset Style -->
+      <!-- Preset Style（所有控件通用）-->
       <div class="uspi-item">
         <div class="uspi-item-label" data-localize="presetStyle">Preset Style</div>
         <div class="uspi-item-value">
@@ -37,7 +41,7 @@
         </div>
       </div>
 
-      <!-- Chart Type -->
+      <!-- Chart Type（所有控件通用）-->
       <div class="uspi-item">
         <div class="uspi-item-label" data-localize="chartType">Chart Type</div>
         <div class="uspi-item-value">
@@ -48,13 +52,31 @@
         </div>
       </div>
 
-      <!-- GPU Selection (Auto + manual override for multi-GPU) -->
-      <div class="uspi-item">
-        <div class="uspi-item-label">GPU</div>
+      <!-- Hardware Selection：按控件类型显示（CPU / GPU / 风扇 / 网卡），选项实时枚举自 LHM -->
+      <div class="uspi-item" id="hwSelectItem" style="display:none">
+        <div class="uspi-item-label" id="hwSelectLabel">Hardware</div>
         <div class="uspi-item-value">
-          <select id="gpuSelect" class="uspi-item-value">
-            <option value="">Auto（自动）</option>
+          <select id="hwSelect" class="uspi-item-value">
+            <option value="" id="hwSelectAuto">Auto</option>
           </select>
+        </div>
+      </div>
+
+      <!-- Range Max：非百分比控件显示（TDP / 频率上限 / 温度 / 显存 / 内存 / 转速），留空 = 自动 -->
+      <div class="uspi-item" id="scaleItem" style="display:none">
+        <div class="uspi-item-label" id="scaleLabel">Range Max</div>
+        <div class="uspi-item-value uspi-scale">
+          <input id="scaleInput" class="uspi-item-value" type="number" min="0" step="any" placeholder="Auto">
+          <span class="uspi-scale-unit" id="scaleUnit"></span>
+        </div>
+      </div>
+
+      <!-- 网络带宽上限：仅 Network Upload / Download 显示（由 uuid 末段决定）-->
+      <div class="uspi-item" id="netLimitItem" style="display:none">
+        <div class="uspi-item-label" data-localize="netLimitLabel">Bandwidth Cap</div>
+        <div class="uspi-item-value uspi-scale">
+          <input id="netMaxMbps" class="uspi-item-value" type="number" min="0" step="1" placeholder="Auto">
+          <span class="uspi-scale-unit">Mbps</span>
         </div>
       </div>
 

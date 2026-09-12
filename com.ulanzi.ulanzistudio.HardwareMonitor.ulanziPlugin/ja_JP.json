@@ -25,6 +25,15 @@
     "preset_retro": "🕹️ レトロ",
     "preset_cyberpunk": "🌆 サイバーパンク",
     "chart_ring": "💍 リング",
-    "chart_wave": "🌊 ウェーブチャート"
+    "chart_wave": "🌊 ウェーブチャート",
+    "netLimitLabel": "帯域上限",
+    "hwLabelCpu": "CPU",
+    "hwLabelGpu": "GPU",
+    "hwLabelFan": "ファン",
+    "hwLabelNic": "ネットワークアダプター",
+    "hwAuto": "自動",
+    "rangeMaxLabel": "最大レンジ",
+    "rangeMaxAutoAdaptive": "自動 — 計測したピークに追従します。値を入力するとレンジを固定できます（TDP や最大ブーストクロックなど）。",
+    "rangeMaxAutoStatic": "自動 — {d} {u}。値を入力すると上書きされます。"
   }
 }

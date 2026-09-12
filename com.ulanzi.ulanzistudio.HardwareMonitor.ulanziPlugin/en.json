@@ -25,6 +25,15 @@
     "preset_retro": "🕹️ Retro",
     "preset_cyberpunk": "🌆 Cyberpunk",
     "chart_ring": "💍 Ring",
-    "chart_wave": "🌊 Wave Chart"
+    "chart_wave": "🌊 Wave Chart",
+    "netLimitLabel": "Bandwidth Cap",
+    "hwLabelCpu": "CPU",
+    "hwLabelGpu": "GPU",
+    "hwLabelFan": "Fan",
+    "hwLabelNic": "Network Adapter",
+    "hwAuto": "Auto",
+    "rangeMaxLabel": "Range Max",
+    "rangeMaxAutoAdaptive": "Auto — scales to the observed peak. Enter a value to pin the range (e.g. TDP or max boost clock).",
+    "rangeMaxAutoStatic": "Auto — {d} {u}. Enter a value to override."
   }
 }
